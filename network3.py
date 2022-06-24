@@ -1,30 +1,5 @@
 """network3.py
 ~~~~~~~~~~~~~~
-
-A Theano-based program for training and running simple neural
-networks.
-
-Supports several layer types (fully connected, convolutional, max
-pooling, softmax), and activation functions (sigmoid, tanh, and
-rectified linear units, with more easily added).
-
-When run on a CPU, this program is much faster than network.py and
-network2.py.  However, unlike network.py and network2.py it can also
-be run on a GPU, which makes it faster still.
-
-Because the code is based on Theano, the code is different in many
-ways from network.py and network2.py.  However, where possible I have
-tried to maintain consistency with the earlier programs.  In
-particular, the API is similar to network2.py.  Note that I have
-focused on making the code simple, easily readable, and easily
-modifiable.  It is not optimized, and omits many desirable features.
-
-This program incorporates ideas from the Theano documentation on
-convolutional neural nets (notably,
-http://deeplearning.net/tutorial/lenet.html ), from Misha Denil's
-implementation of dropout (https://github.com/mdenil/dropout ), and
-from Chris Olah (http://colah.github.io ).
-
 """
 
 #### Libraries
@@ -34,12 +9,16 @@ import gzip
 
 # Third-party libraries
 import numpy as np
+import matplotlib.pyplot as plt
 import theano
 import theano.tensor as T
+from theano import printing
 from theano.tensor.nnet import conv
 from theano.tensor.nnet import softmax
 from theano.tensor import shared_randomstreams
 from theano.tensor.signal.pool import pool_2d
+
+
 
 # Activation functions for neurons
 def linear(z): return z
@@ -59,6 +38,22 @@ if GPU:
 else:
     print("Running with a CPU.  If this is not desired, then the modify "+\
         "network3.py to set\nthe GPU flag to True.")
+
+def save_data_shared(filename, params):
+    f = gzip.open(filename, 'wb')
+    pickle.dump(params, f,protocol=pickle.HIGHEST_PROTOCOL)
+    f.close()
+    # f = gzip.open(filename2, 'wb')
+    # pickle.dump(biases, f)
+    # f.close()
+
+    """
+    Below 3 lines are the step to save it as readable csv
+    """
+    # param_list = [param.get_value()for param in params]
+    # np.savetxt('data.csv', param_list, fmt='%s', delimiter=',')
+    # print(param_list)
+
 
 #### Load the MNIST data
 def load_data_shared(filename="mnist.pkl.gz"):
@@ -86,8 +81,22 @@ class Network(object):
         by stochastic gradient descent.
 
         """
+        # x = T.dvector()
+        # printing_op = printing.Print("vector@@@: ", attrs=['shape'])
+        # printed_op = printing_op(x)
+        # f = theano.function([x], printed_op)
         self.layers = layers
         self.mini_batch_size = mini_batch_size
+        
+        self.epoch_index = np.array([0])
+        self.cost_list = np.array([0])
+        self.accuracy_list = np.array([0])
+
+        self.y_cost_train = self.epoch_index*2  # Y-axis points
+        self.y_accuracy_train = self.epoch_index*2  # Y-axis points
+        self.y_cost_evaluate = self.epoch_index*2
+        self.y_accuracy_evaluate = self.epoch_index*2  # Y-axis points
+
         self.params = [param for layer in self.layers for param in layer.params]
         self.x = T.matrix("x")
         self.y = T.ivector("y")
@@ -114,9 +123,11 @@ class Network(object):
 
         # define the (regularized) cost function, symbolic gradients, and updates
         l2_norm_squared = sum([(layer.w**2).sum() for layer in self.layers])
-        cost = self.layers[-1].cost(self)+\
+        cost_train = self.layers[-1].cost(self)+\
                0.5*lmbda*l2_norm_squared/num_training_batches
-        grads = T.grad(cost, self.params)
+        cost_validate = self.layers[-1].cost(self)+\
+               0.5*lmbda*l2_norm_squared/num_validation_batches        
+        grads = T.grad(cost_train, self.params)
         updates = [(param, param-eta*grad)
                    for param, grad in zip(self.params, grads)]
 
@@ -124,7 +135,7 @@ class Network(object):
         # accuracy in validation and test mini-batches.
         i = T.lscalar() # mini-batch index
         train_mb = theano.function(
-            [i], cost, updates=updates,
+            [i], cost_train, updates=updates,
             givens={
                 self.x:
                 training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
@@ -147,6 +158,7 @@ class Network(object):
                 self.y:
                 test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
+
         self.test_mb_predictions = theano.function(
             [i], self.layers[-1].y_out,
             givens={
@@ -154,13 +166,16 @@ class Network(object):
                 test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
         # Do the actual training
+        cost_list_local = np.array([0])
+        accuracy_list_local = np.array([0])
         best_validation_accuracy = 0.0
         for epoch in range(epochs):
             for minibatch_index in range(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
                 if iteration % 1000 == 0:
                     print("Training mini-batch number {0}".format(iteration))
-                cost_ij = train_mb(minibatch_index)
+                cost_ij = train_mb(minibatch_index)   
+                cost_list_local = np.append(cost_list_local,cost_ij)
                 if (iteration+1) % num_training_batches == 0:
                     validation_accuracy = np.mean(
                         [validate_mb_accuracy(j) for j in range(num_validation_batches)])
@@ -170,15 +185,47 @@ class Network(object):
                         print("This is the best validation accuracy to date.")
                         best_validation_accuracy = validation_accuracy
                         best_iteration = iteration
-                        if test_data:
-                            test_accuracy = np.mean(
-                                [test_mb_accuracy(j) for j in range(num_test_batches)])
-                            print('The corresponding test accuracy is {0:.2%}'.format(
-                                test_accuracy))
+                        accuracy_list_local = np.append(accuracy_list_local, best_validation_accuracy)
+                    
+                    
+            cost_mean = np.mean(cost_list_local)
+            accuracy_mean = np.mean(accuracy_list_local)
+
+            print("Epoch {0}: training_cost {1}".format(
+                epoch, cost_mean))
+
+            self.epoch_index = np.append(self.epoch_index, epoch)
+            self.cost_list = np.append(self.cost_list, cost_mean)
+            self.accuracy_list = np.append(self.accuracy_list,accuracy_mean)
+
+                    
+        #I move to here because the test could be in the end
+        if test_data:
+            test_accuracy = np.mean(
+                [test_mb_accuracy(j) for j in range(num_test_batches)])
+            print('The corresponding test accuracy is {0:.2%}'.format(
+                test_accuracy))
+            # test_predictions = [self.test_mb_predictions(j) for j in range(num_test_batches)]
+            # for prediction in test_predictions:
+            #     print('The corresponding test prediction is ', prediction)
+            
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
+
+
+        # save_data_shared("params.csv", self.params)
+        print(self.epoch_index.size)
+        print(self.cost_list.size)        
+        fig, axs = plt.subplots(1,2)
+        axs[0].plot(self.epoch_index, self.cost_list, "-.", label= "cost-train")  # Plot the chart
+        axs[0].set_title("cost-train")
+        axs[1].plot(self.epoch_index, self.accuracy_list, "-.", label= "accuracy-vali")  # Plot the chart
+        axs[1].set_title("accuracy-vali")        
+        for ax in axs.flat:
+            ax.label_outer()
+        plt.show()  # display
 
 #### Define layer types
 
@@ -191,7 +238,7 @@ class ConvPoolLayer(object):
     """
 
     def __init__(self, filter_shape, image_shape, poolsize=(2, 2),
-                 activation_fn=sigmoid):
+                 activation_fn=sigmoid, border_mode='valid'):
         """`filter_shape` is a tuple of length 4, whose entries are the number
         of filters, the number of input feature maps, the filter height, and the
         filter width.
@@ -208,6 +255,7 @@ class ConvPoolLayer(object):
         self.image_shape = image_shape
         self.poolsize = poolsize
         self.activation_fn=activation_fn
+        self.border_mode = border_mode
         # initialize weights and biases
         n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
         self.w = theano.shared(
@@ -221,17 +269,68 @@ class ConvPoolLayer(object):
                 dtype=theano.config.floatX),
             borrow=True)
         self.params = [self.w, self.b]
+        
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[], _pass=False):
         self.inpt = inpt.reshape(self.image_shape)
         conv_out = conv.conv2d(
             input=self.inpt, filters=self.w, filter_shape=self.filter_shape,
-            image_shape=self.image_shape)
+            image_shape=self.image_shape, border_mode=self.border_mode)
         pooled_out = pool_2d(
             input=conv_out, ws=self.poolsize, ignore_border=True)
         self.output = self.activation_fn(
             pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
         self.output_dropout = self.output # no dropout in the convolutional layers
+
+
+class PoolingLayer(object):
+    """Used to create a convolutional and a max-pooling
+    layer.  
+
+    """
+
+    def __init__(self, filter_shape, image_shape, activation_fn, poolsize=(2, 2)):
+        """`filter_shape` is a tuple of length 4, whose entries are the number
+        of filters, the number of input feature maps, the filter height, and the
+        filter width.
+
+        `image_shape` is a tuple of length 4, whose entries are the
+        mini-batch size, the number of input feature maps, the image
+        height, and the image width.
+
+        `poolsize` is a tuple of length 2, whose entries are the y and
+        x pooling sizes.
+
+        """
+        self.image_shape = image_shape
+        self.poolsize = poolsize
+        self.activation_fn=activation_fn
+        # initialize weights and biases
+        n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
+        self.w = theano.shared(
+            np.asarray(
+                np.random.normal(loc=0, scale=np.sqrt(1.0/n_out), size=filter_shape),
+                dtype=theano.config.floatX),
+            borrow=True)
+        self.b = theano.shared(
+            np.asarray(
+                np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
+                dtype=theano.config.floatX),
+            borrow=True)      
+
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[], _pass=False):
+        if _pass:
+        #pass from conv to pooling
+            self.params = _params
+            [self.w, self.b] = self.params 
+        self.inpt = inpt.reshape(self.image_shape)
+        pooled_out = pool_2d(
+            input=self.inpt, ws=self.poolsize, ignore_border=True)
+        self.output = self.activation_fn(
+            pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+        self.output_dropout = self.output # no dropout in the convolutional layers
+
+
 
 class FullyConnectedLayer(object):
 
@@ -253,7 +352,9 @@ class FullyConnectedLayer(object):
             name='b', borrow=True)
         self.params = [self.w, self.b]
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[], _pass=False):
+        if _pass:
+            self.params = _params
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = self.activation_fn(
             (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
@@ -282,7 +383,9 @@ class SoftmaxLayer(object):
             name='b', borrow=True)
         self.params = [self.w, self.b]
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[], _pass=False):
+        if _pass:
+            self.params = params
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = softmax((1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
         self.y_out = T.argmax(self.output, axis=1)

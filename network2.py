@@ -20,7 +20,11 @@ import sys
 # Third-party libraries
 import numpy as np
 
-
+# importing the required libraries
+import matplotlib.pyplot as plt
+# from matplotlib.path import Path
+import numpy as np
+  
 #### Define the quadratic and cross-entropy cost functions
 
 class QuadraticCost(object):
@@ -82,6 +86,13 @@ class Network(object):
         self.sizes = sizes
         self.default_weight_initializer()
         self.cost=cost
+        # define data values
+        self.x = np.array([0])  # X-axis points
+        self.y_cost_train = self.x*2  # Y-axis points
+        self.y_accuracy_train = self.x*2  # Y-axis points
+        self.y_cost_evaluate = self.x*2
+        self.y_accuracy_evaluate = self.x*2  # Y-axis points
+
 
     def default_weight_initializer(self):
         """Initialize each weight using a Gaussian distribution with mean 0
@@ -180,23 +191,28 @@ class Network(object):
                     mini_batch, eta, lmbda, len(training_data))
 
             print("Epoch %s training complete" % j)
+            self.x = np.append(self.x,j)
 
             if monitor_training_cost:
                 cost = self.total_cost(training_data, lmbda)
                 training_cost.append(cost)
                 print("Cost on training data: {}".format(cost))
+                self.y_cost_train = np.append(self.y_cost_train,cost)
             if monitor_training_accuracy:
                 accuracy = self.accuracy(training_data, convert=True)
                 training_accuracy.append(accuracy)
                 print("Accuracy on training data: {} / {}".format(accuracy, n))
+                self.y_accuracy_train = np.append(self.y_accuracy_train,accuracy)
             if monitor_evaluation_cost:
                 cost = self.total_cost(evaluation_data, lmbda, convert=True)
                 evaluation_cost.append(cost)
                 print("Cost on evaluation data: {}".format(cost))
+                self.y_cost_evaluate = np.append(self.y_cost_evaluate,cost)
             if monitor_evaluation_accuracy:
                 accuracy = self.accuracy(evaluation_data)
                 evaluation_accuracy.append(accuracy)
                 print("Accuracy on evaluation data: {} / {}".format(self.accuracy(evaluation_data), n_data))
+                self.y_accuracy_evaluate = np.append(self.y_accuracy_evaluate,accuracy)
 
             # Early stopping:
             if early_stopping_n > 0:
@@ -210,6 +226,29 @@ class Network(object):
                 if (no_accuracy_change == early_stopping_n):
                     #print("Early-stopping: No accuracy change in last epochs: {}".format(early_stopping_n))
                     return evaluation_cost, evaluation_accuracy, training_cost, training_accuracy
+        fig, axs = plt.subplots(2,2)
+        if monitor_training_cost:
+            axs[0,0].plot(self.x, self.y_cost_train, "-.", label= "cost-train")  # Plot the chart
+            axs[0,0].set_title("cost-train")
+            # plt.legend()
+            # plt.show()  # display
+        if monitor_training_accuracy:
+            axs[0,1].plot(self.x, self.y_accuracy_train, "-.", label= "accuracy_train")  # Plot the chart
+            axs[0,1].set_title("accuracy_train")
+            # plt.legend()
+            # plt.show()  # display
+        if monitor_evaluation_cost:
+            axs[1,0].plot(self.x, self.y_cost_evaluate, "-.", label= "cost_evaluation")  # Plot the chart
+            axs[1,0].set_title("cost_evaluation")
+            # plt.legend()
+            # plt.show()  # display
+        if monitor_evaluation_accuracy:
+            axs[1,1].plot(self.x, self.y_accuracy_evaluate, "-.", label= "accuracy_evaluation")  # Plot the chart
+            axs[1,1].set_title("accuracy_evaluation")
+            # plt.legend()
+        for ax in axs.flat:
+            ax.label_outer()
+        plt.show()  # display
 
         return evaluation_cost, evaluation_accuracy, \
             training_cost, training_accuracy
