@@ -96,8 +96,13 @@ class Network(object):
         self.y_accuracy_train = self.epoch_index*2  # Y-axis points
         self.y_cost_evaluate = self.epoch_index*2
         self.y_accuracy_evaluate = self.epoch_index*2  # Y-axis points
-
-        self.params = [param for layer in self.layers for param in layer.params]
+        # expand the assigning process in for loop to skip the pool layer
+        self.params =  [] 
+        for layer in self.layers:
+            if not layer.skip_paramterize():
+                for param in layer.params:
+                    self.params.append(param)
+        # self.params = [param for layer in self.layers for param in layer.params]
         self.x = T.matrix("x")
         self.y = T.ivector("y")
         init_layer = self.layers[0]
@@ -105,7 +110,7 @@ class Network(object):
         for j in range(1, len(self.layers)): # xrange() was renamed to range() in Python 3.
             prev_layer, layer  = self.layers[j-1], self.layers[j]
             layer.set_inpt(
-                prev_layer.output, prev_layer.output_dropout, self.mini_batch_size)
+                prev_layer.output, prev_layer.output_dropout, self.mini_batch_size, _params=prev_layer.params)
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
 
@@ -122,11 +127,18 @@ class Network(object):
         num_test_batches = int(size(test_data)/mini_batch_size)
 
         # define the (regularized) cost function, symbolic gradients, and updates
-        l2_norm_squared = sum([(layer.w**2).sum() for layer in self.layers])
+        # expand the assigning process in for loop to skip the pool layer
+        w_layers = []
+        for layer in self.layers:
+            if not layer.skip_paramterize():
+                w_layers.append((layer.w**2).sum())
+        l2_norm_squared = sum(w_layers)
+        # l2_norm_squared = sum([(layer.w**2).sum() for layer in self.layers])
         cost_train = self.layers[-1].cost(self)+\
                0.5*lmbda*l2_norm_squared/num_training_batches
         cost_validate = self.layers[-1].cost(self)+\
-               0.5*lmbda*l2_norm_squared/num_validation_batches        
+               0.5*lmbda*l2_norm_squared/num_validation_batches    
+ 
         grads = T.grad(cost_train, self.params)
         updates = [(param, param-eta*grad)
                    for param, grad in zip(self.params, grads)]
@@ -229,7 +241,7 @@ class Network(object):
 
 #### Define layer types
 
-class ConvPoolLayer(object):
+class ConvLayer(object):
     """Used to create a combination of a convolutional and a max-pooling
     layer.  A more sophisticated implementation would separate the
     two, but for our purposes we'll always use them together, and it
@@ -269,27 +281,35 @@ class ConvPoolLayer(object):
                 dtype=theano.config.floatX),
             borrow=True)
         self.params = [self.w, self.b]
-        
+        # print("cost_train: ", cost_train.size)          
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[], _pass=False):
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
         self.inpt = inpt.reshape(self.image_shape)
         conv_out = conv.conv2d(
             input=self.inpt, filters=self.w, filter_shape=self.filter_shape,
             image_shape=self.image_shape, border_mode=self.border_mode)
-        pooled_out = pool_2d(
-            input=conv_out, ws=self.poolsize, ignore_border=True)
-        self.output = self.activation_fn(
-            pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+        activated_out = self.activation_fn(
+            conv_out + self.b.dimshuffle('x', 0, 'x', 'x'))  
+        self.output = activated_out          
+        # self.output = conv_out
+        # self.output_dropout = self.output # no dropout in the convolutional layers
+        # self.output = pool_2d(
+        #     input=activated_out, ws=self.poolsize, ignore_border=True)
+        # self.output = self.activation_fn(
+        #     pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
         self.output_dropout = self.output # no dropout in the convolutional layers
 
+    def skip_paramterize(self):
+        return False
 
-class PoolingLayer(object):
+class PoolLayer(object):
     """Used to create a convolutional and a max-pooling
     layer.  
 
     """
 
-    def __init__(self, filter_shape, image_shape, activation_fn, poolsize=(2, 2)):
+    def __init__(self, filter_shape, image_shape, activation_fn, 
+        poolsize=(2, 2), border_mode='valid', _params=[]):
         """`filter_shape` is a tuple of length 4, whose entries are the number
         of filters, the number of input feature maps, the filter height, and the
         filter width.
@@ -302,35 +322,38 @@ class PoolingLayer(object):
         x pooling sizes.
 
         """
+        self.filter_shape = filter_shape
         self.image_shape = image_shape
         self.poolsize = poolsize
         self.activation_fn=activation_fn
-        # initialize weights and biases
-        n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
-        self.w = theano.shared(
-            np.asarray(
-                np.random.normal(loc=0, scale=np.sqrt(1.0/n_out), size=filter_shape),
-                dtype=theano.config.floatX),
-            borrow=True)
-        self.b = theano.shared(
-            np.asarray(
-                np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
-                dtype=theano.config.floatX),
-            borrow=True)      
+        self.border_mode = border_mode
+        # # initialize weights and biases
+        # n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
+        # self.w = theano.shared(
+        #     np.asarray(
+        #         np.random.normal(loc=0, scale=np.sqrt(1.0/n_out), size=filter_shape),
+        #         dtype=theano.config.floatX),
+        #     borrow=True)
+        # self.b = theano.shared(
+        #     np.asarray(
+        #         np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
+        #         dtype=theano.config.floatX),
+        #     borrow=True)
+        # self.params = [self.w, self.b]
+        self.params = _params    
+        self.w = self.params[0]
+        self.b = self.params[1]
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[], _pass=False):
-        if _pass:
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
         #pass from conv to pooling
-            self.params = _params
-            [self.w, self.b] = self.params 
         self.inpt = inpt.reshape(self.image_shape)
         pooled_out = pool_2d(
-            input=self.inpt, ws=self.poolsize, ignore_border=True)
-        self.output = self.activation_fn(
-            pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+            input=inpt, ws=self.poolsize, ignore_border=True)
+        self.output = pooled_out
         self.output_dropout = self.output # no dropout in the convolutional layers
 
-
+    def skip_paramterize(self):
+        return True
 
 class FullyConnectedLayer(object):
 
@@ -352,9 +375,7 @@ class FullyConnectedLayer(object):
             name='b', borrow=True)
         self.params = [self.w, self.b]
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[], _pass=False):
-        if _pass:
-            self.params = _params
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = self.activation_fn(
             (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
@@ -367,6 +388,9 @@ class FullyConnectedLayer(object):
     def accuracy(self, y):
         "Return the accuracy for the mini-batch."
         return T.mean(T.eq(y, self.y_out))
+
+    def skip_paramterize(self):
+        return False
 
 class SoftmaxLayer(object):
 
@@ -383,9 +407,7 @@ class SoftmaxLayer(object):
             name='b', borrow=True)
         self.params = [self.w, self.b]
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[], _pass=False):
-        if _pass:
-            self.params = params
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = softmax((1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
         self.y_out = T.argmax(self.output, axis=1)
@@ -401,6 +423,8 @@ class SoftmaxLayer(object):
         "Return the accuracy for the mini-batch."
         return T.mean(T.eq(y, self.y_out))
 
+    def skip_paramterize(self):
+        return False
 
 #### Miscellanea
 def size(data):

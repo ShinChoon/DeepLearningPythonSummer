@@ -30,7 +30,7 @@ def testTheano():
 # - network3.py example:
 import network3
 import numpy as np
-from network3 import Network, ConvPoolLayer, FullyConnectedLayer, SoftmaxLayer # softmax plus log-likelihood cost is more common in modern image classification networks.
+from network3 import Network, ConvLayer, PoolLayer, FullyConnectedLayer, SoftmaxLayer # softmax plus log-likelihood cost is more common in modern image classification networks.
 
 # read data:
 training_data, validation_data, test_data = network3.load_data_shared()
@@ -42,18 +42,46 @@ neuron_number_layer1 = 32
 neuron_number_layer2 = 32
 pool_number = 2
 
+            
+
 
 from network3 import ReLU
-net = Network([
-    ConvPoolLayer(image_shape=(mini_batch_size, 1, 28, 28),
+Conv1 = ConvLayer(image_shape=(mini_batch_size, 1, 28, 28),
                   filter_shape=(neuron_number_layer1, 1, 5, 5),
                   poolsize=(pool_number, pool_number),
-                  activation_fn=ReLU),
-    ConvPoolLayer(image_shape=(mini_batch_size, neuron_number_layer1, 12, 12),
+                  activation_fn=ReLU)
+
+Pool1 = PoolLayer(image_shape=(mini_batch_size, neuron_number_layer1, 24, 24),
+                  filter_shape=(neuron_number_layer1, neuron_number_layer1, 5, 5),
+                  poolsize=(pool_number, pool_number),
+                  activation_fn=ReLU, _params=Conv1.params)
+
+Conv2 = ConvLayer(image_shape=(mini_batch_size, neuron_number_layer1, 12, 12),
                   filter_shape=(neuron_number_layer2, neuron_number_layer1, 5, 5),
                   poolsize=(pool_number, pool_number),
-                  activation_fn=ReLU),
+                  activation_fn=ReLU)
+
+
+Pool2 = PoolLayer(image_shape=(mini_batch_size, neuron_number_layer2, 8, 8),
+                  filter_shape=(neuron_number_layer2, neuron_number_layer2, 5, 5),
+                  poolsize=(pool_number, pool_number),
+                  activation_fn=ReLU, _params=Conv1.params)
+
+net = Network([
+    Conv1,
+    # PoolLayer(image_shape=(mini_batch_size, neuron_number_layer1, 24, 24),
+    #               filter_shape=(neuron_number_layer1, neuron_number_layer1, 5, 5),
+    #               poolsize=(pool_number, pool_number),
+    #               activation_fn=ReLU),  
+    #
+    Pool1, 
+    Conv2,
+    Pool2,
+    # PoolLayer(image_shape=(mini_batch_size, neuron_number_layer2, 8, 8),
+    #               filter_shape=(neuron_number_layer1, neuron_number_layer2, 5, 5),
+    #               poolsize=(pool_number, pool_number),
+    #               activation_fn=ReLU),        
     FullyConnectedLayer(n_in=neuron_number_layer2*4*4, n_out=300, activation_fn=ReLU, p_dropout=0.5),
     FullyConnectedLayer(n_in=300, n_out=1000, activation_fn=ReLU, p_dropout=0.5),
     SoftmaxLayer(n_in=1000, n_out=10)], mini_batch_size)
-net.SGD(training_data=training_data, epochs=10, mini_batch_size=mini_batch_size, eta=0.05, validation_data=validation_data, test_data=test_data, lmbda=0.1)
+net.SGD(training_data=training_data, epochs=2, mini_batch_size=mini_batch_size, eta=50, validation_data=validation_data, test_data=test_data, lmbda=0.1)
