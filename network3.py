@@ -40,19 +40,20 @@ else:
         "network3.py to set\nthe GPU flag to True.")
 
 def save_data_shared(filename, params):
-    f = gzip.open(filename, 'wb')
-    pickle.dump(params, f,protocol=pickle.HIGHEST_PROTOCOL)
-    f.close()
-    # f = gzip.open(filename2, 'wb')
-    # pickle.dump(biases, f)
+    # f = gzip.open(filename, 'wb')
+    # pickle.dump(params, f,protocol=pickle.HIGHEST_PROTOCOL)
     # f.close()
 
     """
     Below 3 lines are the step to save it as readable csv
     """
-    # param_list = [param.get_value()for param in params]
-    # np.savetxt('data.csv', param_list, fmt='%s', delimiter=',')
-    # print(param_list)
+    # param_list = []
+    # for param in params:
+        # for (weights,biases) in param.get_value():
+            # param_list.append(weights)
+    param_list = [param.get_value()for param in params]
+    np.savetxt('data.csv', param_list, fmt='%s', delimiter=' ')
+    print(param_list[0])
 
 
 #### Load the MNIST data
@@ -81,10 +82,6 @@ class Network(object):
         by stochastic gradient descent.
 
         """
-        # x = T.dvector()
-        # printing_op = printing.Print("vector@@@: ", attrs=['shape'])
-        # printed_op = printing_op(x)
-        # f = theano.function([x], printed_op)
         self.layers = layers
         self.mini_batch_size = mini_batch_size
         
@@ -102,7 +99,6 @@ class Network(object):
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
-        # self.params = [param for layer in self.layers for param in layer.params]
         self.x = T.matrix("x")
         self.y = T.ivector("y")
         init_layer = self.layers[0]
@@ -133,7 +129,6 @@ class Network(object):
             if not layer.skip_paramterize():
                 w_layers.append((layer.w**2).sum())
         l2_norm_squared = sum(w_layers)
-        # l2_norm_squared = sum([(layer.w**2).sum() for layer in self.layers])
         cost_train = self.layers[-1].cost(self)+\
                0.5*lmbda*l2_norm_squared/num_training_batches
         cost_validate = self.layers[-1].cost(self)+\
@@ -226,10 +221,7 @@ class Network(object):
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
 
-
-        # save_data_shared("params.csv", self.params)
-        print(self.epoch_index.size)
-        print(self.cost_list.size)        
+        save_data_shared("params.csv", self.params)      
         fig, axs = plt.subplots(1,2)
         axs[0].plot(self.epoch_index, self.cost_list, "-.", label= "cost-train")  # Plot the chart
         axs[0].set_title("cost-train")
@@ -291,12 +283,7 @@ class ConvLayer(object):
         activated_out = self.activation_fn(
             conv_out + self.b.dimshuffle('x', 0, 'x', 'x'))  
         self.output = activated_out          
-        # self.output = conv_out
-        # self.output_dropout = self.output # no dropout in the convolutional layers
-        # self.output = pool_2d(
-        #     input=activated_out, ws=self.poolsize, ignore_border=True)
-        # self.output = self.activation_fn(
-        #     pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+
         self.output_dropout = self.output # no dropout in the convolutional layers
 
     def skip_paramterize(self):
@@ -327,19 +314,7 @@ class PoolLayer(object):
         self.poolsize = poolsize
         self.activation_fn=activation_fn
         self.border_mode = border_mode
-        # # initialize weights and biases
-        # n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
-        # self.w = theano.shared(
-        #     np.asarray(
-        #         np.random.normal(loc=0, scale=np.sqrt(1.0/n_out), size=filter_shape),
-        #         dtype=theano.config.floatX),
-        #     borrow=True)
-        # self.b = theano.shared(
-        #     np.asarray(
-        #         np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
-        #         dtype=theano.config.floatX),
-        #     borrow=True)
-        # self.params = [self.w, self.b]
+
         self.params = _params    
         self.w = self.params[0]
         self.b = self.params[1]
