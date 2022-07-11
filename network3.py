@@ -14,6 +14,7 @@ import theano
 import theano.tensor as T
 from theano import printing
 from theano.tensor.nnet import conv
+from theano.tensor.nnet import conv2d
 from theano.tensor.nnet import softmax
 from theano.tensor import shared_randomstreams
 from theano.tensor.signal.pool import pool_2d
@@ -39,22 +40,138 @@ else:
     print("Running with a CPU.  If this is not desired, then the modify "+\
         "network3.py to set\nthe GPU flag to True.")
 
-def save_data_shared(filename, params):
-    # f = gzip.open(filename, 'wb')
-    # pickle.dump(params, f,protocol=pickle.HIGHEST_PROTOCOL)
-    # f.close()
+
+def float_bin(number, places=4):
+    source = float("{:.4f}".format(number))   
+    N_flag = True if source<=0 else False
+    _number = source if source >= 0 else -1*source
+    whole, dec = str(source).split(".")
+
+    dec = int(dec)
+    whole = int(whole)
+
+    dec = _number - int(whole)
+
+    res = bin(0).lstrip("0b")
+    if whole > 0:
+    #detect if any value more than 1
+        res = bin(whole).lstrip("0b") + "."
+    else:
+        res = bin(0).lstrip("0b")
+
+    for x in range(places):
+        
+        answer = (decimal_converter(float(dec))) * 2
+        # Convert the decimal part
+        # to float 4-digit again
+        whole, _dec = str(answer).split(".")
+        dec = answer - int(whole)
+
+
+        # Keep adding the integer parts
+        # receive to the result variable
+        res += whole
+ 
+    result = str(res)
+
+    if N_flag:
+        result = '1' + result
+    else:
+        result = '0' + result
+    
+    return result
+
+def decimal_converter(num):
+    while num > 1:
+        # print("num: ", num)
+        num /= 10
+    return num
+
+
+
+def save_data_shared(filename, params, columns):
 
     """
     Below 3 lines are the step to save it as readable csv
     """
-    # param_list = []
-    # for param in params:
-        # for (weights,biases) in param.get_value():
-            # param_list.append(weights)
     param_list = [param.get_value()for param in params]
-    np.savetxt('data.csv', param_list, fmt='%s', delimiter=' ')
-    print(param_list[0])
+    # quantitation of weights
+    # weights = [quantitatize_layer_weights(param_list[0])]
+    downgraded_weights = []
+    weights = []
+    # for elem in param_list[0]:
+    #     downgraded_weights.append(downgrade_dimension(elem))
+    if len(param_list)>0:
+        weights.append([downgrade_dimension(elem)for elem in param_list[0]])
+    bias = []
+    repeat_weight_printout = []
+    repeat_bias_printout = []
+    repeat = 0
+    for i in range(1,len(param_list)-4): # no need for MP1 and SM, and exclude weights and bias both
 
+        if i%2 == 0:
+            # quantitation of weights
+            downgraded_weights = []
+            # for elem in param_list[i]:
+            #     downgraded_weights.append(downgrade_dimension(elem))
+            weights.append([downgrade_dimension(elem) for elem in param_list[i]])
+            # weights.append(downgraded_weights)
+            # weights.append(param_list[i])
+            bias.append(param_list[i])
+    # test_weights = [weights[0]]
+    quantitated_weights = quantitatize_layer_weights(weights)
+    repeat_weight_printout = repeat_by_column(quantitated_weights, columns)
+    # repeat_bias_printout = repeat_by_column(bias, columns)
+    # print("repeat_weight_printout type: ", type(repeat_weight_printout[0][0][0]))
+    # np.savetxt('data.csv', repeat_weight_printout, fmt='%s', delimiter='')
+    np.savetxt('param.csv', weights, fmt='%s', delimiter='')
+
+def quantitatize_layer_weights(params):
+    # params: one layer
+    #debug
+    columns_set = []
+    for layer in params:# in one layer
+        columns = []
+        for neuron in layer: # in one kernel
+            row = []
+            for C in range(len(neuron)):
+                float_number = float("{:.5f}".format(neuron[C]))
+                row.append(float_bin(float_number))
+            columns.append(row)
+        columns_set.append(columns)
+        
+    return columns_set
+
+def downgrade_dimension(params):
+    # result = []
+    # for f in params[0]:
+    #     for e in f:
+    #         result.append(e)
+    result= [e for f in params[0] for e in f]
+    return result
+
+
+def repeat_by_column(source,columns):
+    repeat_source_printout = []
+    repeat_source_printout = []
+    for h in source:# in one layer
+        repeat_source = []
+        for c in h: # in one kernel
+            repeat_source_r = []
+            repeat_source_col = []
+            for i in range(8):# repeat as a column
+                repeat_source_r.append(c) # build one 2Cu
+            
+            cols = int(columns[source.index(h)])
+            for i in range(cols):
+                repeat_source_col.append(repeat_source_r) #duplicate as columns in one kernel
+
+            repeat_source.append(repeat_source_col) #collect 2Cus for kernel sets
+        repeat_source_printout.append(repeat_source) #finish 2Cus for layers
+    # debug
+    a = np.array(repeat_source_printout)
+    print(a.shape)
+    return repeat_source_printout
 
 #### Load the MNIST data
 def load_data_shared(filename="mnist.pkl.gz"):
@@ -95,10 +212,14 @@ class Network(object):
         self.y_accuracy_evaluate = self.epoch_index*2  # Y-axis points
         # expand the assigning process in for loop to skip the pool layer
         self.params =  [] 
+        self.columns = []
         for layer in self.layers:
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
+        for layer in self.layers[:-2]:  
+            if not layer.skip_paramterize():         
+                self.columns.append(layer.column)
         self.x = T.matrix("x")
         self.y = T.ivector("y")
         init_layer = self.layers[0]
@@ -133,8 +254,9 @@ class Network(object):
                0.5*lmbda*l2_norm_squared/num_training_batches
         cost_validate = self.layers[-1].cost(self)+\
                0.5*lmbda*l2_norm_squared/num_validation_batches    
- 
+        # need to make grads integer
         grads = T.grad(cost_train, self.params)
+        # need to make eta as resolution of quantitation
         updates = [(param, param-eta*grad)
                    for param, grad in zip(self.params, grads)]
 
@@ -220,8 +342,8 @@ class Network(object):
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
-
-        save_data_shared("params.csv", self.params)      
+        print("self.columns:",self.columns)
+        save_data_shared("params.csv", self.params, self.columns)      
         fig, axs = plt.subplots(1,2)
         axs[0].plot(self.epoch_index, self.cost_list, "-.", label= "cost-train")  # Plot the chart
         axs[0].set_title("cost-train")
@@ -260,6 +382,8 @@ class ConvLayer(object):
         self.poolsize = poolsize
         self.activation_fn=activation_fn
         self.border_mode = border_mode
+
+        self.column = self.filter_shape[1]*self.image_shape[2]/4
         # initialize weights and biases
         n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
         self.w = theano.shared(
@@ -277,7 +401,7 @@ class ConvLayer(object):
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
         self.inpt = inpt.reshape(self.image_shape)
-        conv_out = conv.conv2d(
+        conv_out = conv2d(
             input=self.inpt, filters=self.w, filter_shape=self.filter_shape,
             image_shape=self.image_shape, border_mode=self.border_mode)
         activated_out = self.activation_fn(
@@ -295,7 +419,7 @@ class PoolLayer(object):
 
     """
 
-    def __init__(self, filter_shape, image_shape, activation_fn, 
+    def __init__(self, filter_shape, image_shape, activation_fn=sigmoid, 
         poolsize=(2, 2), border_mode='valid', _params=[]):
         """`filter_shape` is a tuple of length 4, whose entries are the number
         of filters, the number of input feature maps, the filter height, and the
@@ -318,6 +442,7 @@ class PoolLayer(object):
         self.params = _params    
         self.w = self.params[0]
         self.b = self.params[1]
+        self.column = self.filter_shape[1]*self.image_shape[2]/4
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
         #pass from conv to pooling
@@ -341,7 +466,7 @@ class FullyConnectedLayer(object):
         self.w = theano.shared(
             np.asarray(
                 np.random.normal(
-                    loc=0.0, scale=np.sqrt(1.0/n_out), size=(n_in, n_out)),
+                    loc=0.0, scale=np.sqrt(1.0), size=(n_in, n_out)),
                 dtype=theano.config.floatX),
             name='w', borrow=True)
         self.b = theano.shared(
@@ -349,7 +474,7 @@ class FullyConnectedLayer(object):
                        dtype=theano.config.floatX),
             name='b', borrow=True)
         self.params = [self.w, self.b]
-
+        
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = self.activation_fn(
@@ -359,6 +484,10 @@ class FullyConnectedLayer(object):
             inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
         self.output_dropout = self.activation_fn(
             T.dot(self.inpt_dropout, self.w) + self.b)
+
+    def cost(self, net):
+        "Return the log-likelihood cost."
+        return -T.mean(T.log(self.output_dropout)[T.arange(net.y.shape[0]), net.y])
 
     def accuracy(self, y):
         "Return the accuracy for the mini-batch."
