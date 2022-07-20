@@ -28,6 +28,47 @@ from theano.tensor.nnet import sigmoid
 from theano.tensor import tanh
 
 
+class QuadraticCost(object):
+
+    @staticmethod
+    def fn(a, y):
+        """Return the cost associated with an output ``a`` and desired output
+        ``y``.
+
+        """
+        return 0.5*np.linalg.norm(a-y)**2
+
+    @staticmethod
+    def delta(z, a, y):
+        """Return the error delta from the output layer."""
+        return (a-y) * sigmoid_prime(z)
+
+
+class CrossEntropyCost(object):
+
+    @staticmethod
+    def fn(a, y):
+        """Return the cost associated with an output ``a`` and desired output
+        ``y``.  Note that np.nan_to_num is used to ensure numerical
+        stability.  In particular, if both ``a`` and ``y`` have a 1.0
+        in the same slot, then the expression (1-y)*np.log(1-a)
+        returns nan.  The np.nan_to_num ensures that that is converted
+        to the correct value (0.0).
+
+        """
+        return -np.sum(np.nan_to_num(-y*np.log(a)-(1-y)*np.log(1-a)))
+
+    @staticmethod
+    def delta(z, a, y):
+        """Return the error delta from the output layer.  Note that the
+        parameter ``z`` is not used by the method.  It is included in
+        the method's parameters in order to make the interface
+        consistent with the delta method for other cost classes.
+
+        """
+        return (a-y)
+
+
 #### Constants
 GPU = True
 if GPU:
@@ -42,44 +83,39 @@ else:
 
 
 def float_bin(number, places=4):
-    source = float("{:.4f}".format(number))   
-    N_flag = True if source<=0 else False
+    source = float("{:.4f}".format(number))
+    N_flag = True if source <= 0 else False
     _number = source if source >= 0 else -1*source
     whole, dec = str(source).split(".")
-
     dec = int(dec)
     whole = int(whole)
-
     dec = _number - int(whole)
-
     res = bin(0).lstrip("0b")
     if whole > 0:
-    #detect if any value more than 1
+        #detect if any value more than 1
         res = bin(whole).lstrip("0b") + "."
     else:
         res = bin(0).lstrip("0b")
-
     for x in range(places):
-        
         answer = (decimal_converter(float(dec))) * 2
         # Convert the decimal part
         # to float 4-digit again
         whole, _dec = str(answer).split(".")
-        dec = answer - int(whole)
-
-
+        if answer > 0:
+            dec = answer - int(whole)
+        else:
+            whole, _dec = str(0.0).split(".")
         # Keep adding the integer parts
         # receive to the result variable
         res += whole
- 
     result = str(res)
-
     if N_flag:
         result = '1' + result
     else:
         result = '0' + result
-    
+
     return result
+
 
 def decimal_converter(num):
     while num > 1:
@@ -94,65 +130,112 @@ def save_data_shared(filename, params, columns):
     """
     Below 3 lines are the step to save it as readable csv
     """
-    param_list = [param.get_value()for param in params]
+    param_list = [param.get_value() for param in params]
+    _param_list_result = []
+    for param in param_list:
+        _param_result = quantitatize_layer(param)
+        _param_list_result.append(_param_result)
+    # _param_list_result = np.array(_param_list_result)
+    
     # quantitation of weights
-    # weights = [quantitatize_layer_weights(param_list[0])]
+    # weights = [quantitatize_layer(param_list[0])]
     downgraded_weights = []
+    max = []
+    min = []
     weights = []
-    # for elem in param_list[0]:
-    #     downgraded_weights.append(downgrade_dimension(elem))
-    if len(param_list)>0:
-        weights.append([downgrade_dimension(elem)for elem in param_list[0]])
+
+    if len(_param_list_result)>0:
+        weights.append([downgrade_dimension(elem)
+            for elem in _param_list_result[0]])
+
     bias = []
     repeat_weight_printout = []
     repeat_bias_printout = []
     repeat = 0
-    for i in range(1,len(param_list)-4): # no need for MP1 and SM, and exclude weights and bias both
+    # no need for MP1 and SM, and exclude weights and bias both
+    for i in range(1, len(_param_list_result)):
 
         if i%2 == 0:
             # quantitation of weights
             downgraded_weights = []
-            # for elem in param_list[i]:
-            #     downgraded_weights.append(downgrade_dimension(elem))
-            weights.append([downgrade_dimension(elem) for elem in param_list[i]])
-            # weights.append(downgraded_weights)
-            # weights.append(param_list[i])
-            bias.append(param_list[i])
-    # test_weights = [weights[0]]
-    quantitated_weights = quantitatize_layer_weights(weights)
-    repeat_weight_printout = repeat_by_column(quantitated_weights, columns)
-    # repeat_bias_printout = repeat_by_column(bias, columns)
-    # print("repeat_weight_printout type: ", type(repeat_weight_printout[0][0][0]))
-    # np.savetxt('data.csv', repeat_weight_printout, fmt='%s', delimiter='')
-    np.savetxt('param.csv', weights, fmt='%s', delimiter='')
+            _param_list_local = np.array(_param_list_result[i])
+            if len(_param_list_local.shape) >= 4:
+                weights.append([downgrade_dimension(elem) 
+                    for elem in _param_list_local])
+            else:
+                weights.append(_param_list_local)
+               
+        else:
+            _param_list_local = np.array(_param_list_result[i])
+            bias.append(_param_list_result[i])
+    # repeat_weight_printout = repeat_by_column_weights(weights, columns)
+    # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
-def quantitatize_layer_weights(params):
+    # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
+    np.savetxt('param_w.csv', weights, fmt='%s', delimiter='')
+
+
+def quantitatize_layer(params):
+    # params: one layer
+    #debug
+    params = np.array(params)
+    _params_result=[]
+    if len(params.shape) > 2: #normally for Conv
+        for neuron in params:  # in one kernel
+            # print("neuron: ", neuron)
+            _neuron_result = []
+            for ele in neuron:
+                _ele_result = []
+                for C in ele:
+                    _C_result = []
+                    for index in range(len(C)):
+                        C[index] = float("{:.5f}".format(C[index]))
+                        float_result = float_bin(C[index])
+                        _C_result.append(float_result)
+                    _ele_result.append(_C_result)
+                _neuron_result.append(_ele_result)
+            _params_result.append(_neuron_result)
+
+    elif len(params.shape) == 2: # normally for MLP
+        _params_result = []
+        for C in params:
+            _C_result = []
+            for index in range(len(C)):
+                C[index] = float("{:.5f}".format(C[index]))
+                float_result = float_bin(C[index])
+                _C_result.append(float_result)
+            _params_result.append(_C_result)
+    else: # normally for bias
+        _params_result = []
+        for index in range(len(params)):
+            params[index] = float("{:.5f}".format(params[index]))
+            float_result = float_bin(params[index])
+            _params_result.append(float_result)
+
+    return _params_result
+
+
+
+def quantitatize_layer_bias(params):
     # params: one layer
     #debug
     columns_set = []
-    for layer in params:# in one layer
+    for layer in params:  # in one layer
         columns = []
-        for neuron in layer: # in one kernel
-            row = []
-            for C in range(len(neuron)):
-                float_number = float("{:.5f}".format(neuron[C]))
-                row.append(float_bin(float_number))
-            columns.append(row)
+        for C in range(len(layer)):
+            float_number = float("{:.5f}".format(layer[C]))
+            columns.append(float_bin(float_number))
         columns_set.append(columns)
-        
+
     return columns_set
 
 def downgrade_dimension(params):
-    # result = []
-    # for f in params[0]:
-    #     for e in f:
-    #         result.append(e)
     result= [e for f in params[0] for e in f]
     return result
 
 
-def repeat_by_column(source,columns):
-    repeat_source_printout = []
+def repeat_by_column_weights(source,columns):
+    print("source: ", source)    
     repeat_source_printout = []
     for h in source:# in one layer
         repeat_source = []
@@ -168,12 +251,25 @@ def repeat_by_column(source,columns):
 
             repeat_source.append(repeat_source_col) #collect 2Cus for kernel sets
         repeat_source_printout.append(repeat_source) #finish 2Cus for layers
-    # debug
-    a = np.array(repeat_source_printout)
-    print(a.shape)
+
     return repeat_source_printout
 
-#### Load the MNIST data
+
+def repeat_by_column_bias(layers, columns):
+    repeat_resut = []
+    for layer in layers:
+        wshape, bshape = layer.di
+        row = []
+        repeat_row = []
+        cols = int(columns[layers.index(layer)])
+        for ele in layer:
+            row.append([[ele for i in range(9)] for h in range(8)])
+        repeat_row.append([row for i in range(cols)])
+        repeat_resut.append(repeat_row)
+       
+    return repeat_resut
+
+#### Load the MNIST 
 def load_data_shared(filename="mnist.pkl.gz"):
     f = gzip.open(filename, 'rb')
     training_data, validation_data, test_data = pickle.load(f, encoding="latin1")
@@ -213,13 +309,18 @@ class Network(object):
         # expand the assigning process in for loop to skip the pool layer
         self.params =  [] 
         self.columns = []
+        self.rows = []
+        _number = 0
         for layer in self.layers:
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
+                    _number = _number + 1
+                    print("_number: ", _number)
         for layer in self.layers[:-2]:  
             if not layer.skip_paramterize():         
                 self.columns.append(layer.column)
+                self.rows.append(layer.row)
         self.x = T.matrix("x")
         self.y = T.ivector("y")
         init_layer = self.layers[0]
@@ -227,7 +328,7 @@ class Network(object):
         for j in range(1, len(self.layers)): # xrange() was renamed to range() in Python 3.
             prev_layer, layer  = self.layers[j-1], self.layers[j]
             layer.set_inpt(
-                prev_layer.output, prev_layer.output_dropout, self.mini_batch_size, _params=prev_layer.params)
+                prev_layer.output, prev_layer.output_dropout, self.mini_batch_size)
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
 
@@ -252,8 +353,6 @@ class Network(object):
         l2_norm_squared = sum(w_layers)
         cost_train = self.layers[-1].cost(self)+\
                0.5*lmbda*l2_norm_squared/num_training_batches
-        cost_validate = self.layers[-1].cost(self)+\
-               0.5*lmbda*l2_norm_squared/num_validation_batches    
         # need to make grads integer
         grads = T.grad(cost_train, self.params)
         # need to make eta as resolution of quantitation
@@ -334,24 +433,22 @@ class Network(object):
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
             print('The corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
-            # test_predictions = [self.test_mb_predictions(j) for j in range(num_test_batches)]
-            # for prediction in test_predictions:
-            #     print('The corresponding test prediction is ', prediction)
             
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
         print("self.columns:",self.columns)
-        save_data_shared("params.csv", self.params, self.columns)      
-        fig, axs = plt.subplots(1,2)
-        axs[0].plot(self.epoch_index, self.cost_list, "-.", label= "cost-train")  # Plot the chart
-        axs[0].set_title("cost-train")
-        axs[1].plot(self.epoch_index, self.accuracy_list, "-.", label= "accuracy-vali")  # Plot the chart
-        axs[1].set_title("accuracy-vali")        
-        for ax in axs.flat:
-            ax.label_outer()
-        plt.show()  # display
+        print("self.rows:",self.rows)  
+        save_data_shared("params.csv", self.params, self.columns) 
+        # fig, axs = plt.subplots(1,2)
+        # axs[0].plot(self.epoch_index, self.cost_list, "-.", label= "cost-train")  # Plot the chart
+        # axs[0].set_title("cost-train")
+        # axs[1].plot(self.epoch_index, self.accuracy_list, "-.", label= "accuracy-vali")  # Plot the chart
+        # axs[1].set_title("accuracy-vali")        
+        # for ax in axs.flat:
+        #     ax.label_outer()
+        # plt.show()  # display
 
 #### Define layer types
 
@@ -383,9 +480,11 @@ class ConvLayer(object):
         self.activation_fn=activation_fn
         self.border_mode = border_mode
 
-        self.column = self.filter_shape[1]*self.image_shape[2]/4
+        self.column = self.image_shape[1]*self.image_shape[2]/4
+        self.row = self.filter_shape[0]
         # initialize weights and biases
         n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
+        n_in = (image_shape[1]*np.prod(image_shape[2:]))
         self.w = theano.shared(
             np.asarray(
                 np.random.normal(loc=0, scale=np.sqrt(1.0/n_out), size=filter_shape),
@@ -397,9 +496,8 @@ class ConvLayer(object):
                 dtype=theano.config.floatX),
             borrow=True)
         self.params = [self.w, self.b]
-        # print("cost_train: ", cost_train.size)          
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape(self.image_shape)
         conv_out = conv2d(
             input=self.inpt, filters=self.w, filter_shape=self.filter_shape,
@@ -412,6 +510,11 @@ class ConvLayer(object):
 
     def skip_paramterize(self):
         return False
+
+    def dimension_show(self):
+        weight_array = np.array(self.w)
+        bias_array = np.array(self.b)
+        return weight_array.shape, bias_array.shape
 
 class PoolLayer(object):
     """Used to create a convolutional and a max-pooling
@@ -444,7 +547,7 @@ class PoolLayer(object):
         self.b = self.params[1]
         self.column = self.filter_shape[1]*self.image_shape[2]/4
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         #pass from conv to pooling
         self.inpt = inpt.reshape(self.image_shape)
         pooled_out = pool_2d(
@@ -454,6 +557,11 @@ class PoolLayer(object):
 
     def skip_paramterize(self):
         return True
+    
+    def dimension_show(self):
+        weight_array = np.array(self.w)
+        bias_array = np.array(self.b)
+        return weight_array.shape, bias_array.shape
 
 class FullyConnectedLayer(object):
 
@@ -462,11 +570,15 @@ class FullyConnectedLayer(object):
         self.n_out = n_out
         self.activation_fn = activation_fn
         self.p_dropout = p_dropout
+        # self.crosscost = CrossEntropyCost
         # Initialize weights and biases
+        self.column = self.n_in/72
+        self.row = self.n_in/72
+
         self.w = theano.shared(
             np.asarray(
                 np.random.normal(
-                    loc=0.0, scale=np.sqrt(1.0), size=(n_in, n_out)),
+                    loc=0.0, scale=np.sqrt(1.0/n_out), size=(n_in, n_out)),
                 dtype=theano.config.floatX),
             name='w', borrow=True)
         self.b = theano.shared(
@@ -475,7 +587,7 @@ class FullyConnectedLayer(object):
             name='b', borrow=True)
         self.params = [self.w, self.b]
         
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = self.activation_fn(
             (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
@@ -484,10 +596,8 @@ class FullyConnectedLayer(object):
             inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
         self.output_dropout = self.activation_fn(
             T.dot(self.inpt_dropout, self.w) + self.b)
-
-    def cost(self, net):
-        "Return the log-likelihood cost."
-        return -T.mean(T.log(self.output_dropout)[T.arange(net.y.shape[0]), net.y])
+        # self.output_dropout = T.nnet.sigmoid(T.dot(self.inpt_dropout, self.w) + self.b)
+        
 
     def accuracy(self, y):
         "Return the accuracy for the mini-batch."
@@ -495,6 +605,12 @@ class FullyConnectedLayer(object):
 
     def skip_paramterize(self):
         return False
+
+    def dimension_show(self):
+        weight_array = np.array(self.w)
+        bias_array = np.array(self.b)
+        return weight_array.shape, bias_array.shape
+
 
 class SoftmaxLayer(object):
 
@@ -511,13 +627,15 @@ class SoftmaxLayer(object):
             name='b', borrow=True)
         self.params = [self.w, self.b]
 
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size, _params=[]):
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
-        self.output = softmax((1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
+        self.output = softmax((1-self.p_dropout) *
+                              T.dot(self.inpt, self.w) + self.b)
         self.y_out = T.argmax(self.output, axis=1)
         self.inpt_dropout = dropout_layer(
             inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
-        self.output_dropout = softmax(T.dot(self.inpt_dropout, self.w) + self.b)
+        self.output_dropout = softmax(
+            T.dot(self.inpt_dropout, self.w) + self.b)
 
     def cost(self, net):
         "Return the log-likelihood cost."
@@ -530,6 +648,10 @@ class SoftmaxLayer(object):
     def skip_paramterize(self):
         return False
 
+    def dimension_show(self):
+        weight_array = np.array(self.w)
+        bias_array = np.array(self.b)
+        return weight_array.shape, bias_array.shape
 #### Miscellanea
 def size(data):
     "Return the size of the dataset `data`."

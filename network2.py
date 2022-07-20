@@ -17,9 +17,6 @@ import json
 import random
 import sys
 
-# Third-party libraries
-import numpy as np
-
 # importing the required libraries
 import matplotlib.pyplot as plt
 # from matplotlib.path import Path
