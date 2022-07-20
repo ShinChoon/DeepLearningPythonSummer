@@ -310,13 +310,10 @@ class Network(object):
         self.params =  [] 
         self.columns = []
         self.rows = []
-        _number = 0
         for layer in self.layers:
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
-                    _number = _number + 1
-                    print("_number: ", _number)
         for layer in self.layers[:-2]:  
             if not layer.skip_paramterize():         
                 self.columns.append(layer.column)
@@ -433,6 +430,9 @@ class Network(object):
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
             print('The corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
+            # test_predictions = [self.test_mb_predictions(j) for j in range(num_test_batches)]
+            # for prediction in test_predictions:
+            #     print('The corresponding test prediction is ', prediction)
             
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
@@ -597,6 +597,7 @@ class FullyConnectedLayer(object):
         self.output_dropout = self.activation_fn(
             T.dot(self.inpt_dropout, self.w) + self.b)
         # self.output_dropout = T.nnet.sigmoid(T.dot(self.inpt_dropout, self.w) + self.b)
+
         
 
     def accuracy(self, y):
