@@ -215,20 +215,6 @@ def quantitatize_layer(params):
     return _params_result
 
 
-
-def quantitatize_layer_bias(params):
-    # params: one layer
-    #debug
-    columns_set = []
-    for layer in params:  # in one layer
-        columns = []
-        for C in range(len(layer)):
-            float_number = float("{:.5f}".format(layer[C]))
-            columns.append(float_bin(float_number))
-        columns_set.append(columns)
-
-    return columns_set
-
 def downgrade_dimension(params):
     result= [e for f in params[0] for e in f]
     return result
