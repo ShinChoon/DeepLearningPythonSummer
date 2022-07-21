@@ -171,7 +171,7 @@ def save_data_shared(filename, params, columns):
     # repeat_weight_printout = repeat_by_column_weights(weights, columns)
     # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
-    # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
+    np.savetxt('param_b.csv', bias, fmt='%s', delimiter='')
     np.savetxt('param_w.csv', weights, fmt='%s', delimiter='')
 
 

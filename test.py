@@ -143,4 +143,4 @@ net = Network([
     MLP2,
     SMLayer
     ], mini_batch_size)
-net.SGD(training_data=training_data, epochs=10, mini_batch_size=mini_batch_size, eta=0.025, validation_data=validation_data, test_data=test_data, lmbda=10)
+net.SGD(training_data=training_data, epochs=1, mini_batch_size=mini_batch_size, eta=0.025, validation_data=validation_data, test_data=test_data, lmbda=10)
