@@ -42,8 +42,8 @@ mini_batch_size = 10
 CHNL1 = 8
 CHNL2 = 16
 CHNL3 = 16
-CHNL4 = 32
-CHNL5 = 64
+CHNL4 = 64
+CHNL5 = 16
 
 pool_scale = 2
 conv_scale = 3
@@ -121,4 +121,8 @@ net = Network([
     MLP2,
     SMLayer
     ], mini_batch_size)
-net.SGD(training_data=training_data, epochs=1, mini_batch_size=mini_batch_size, eta=0.025, validation_data=validation_data, test_data=test_data, lmbda=100)
+net.SGD(training_data=training_data, 
+        epochs=0, mini_batch_size=mini_batch_size, eta=0.025, validation_data=validation_data, test_data=test_data, lmbda=50)
+
+# net.test_accuracy(training_data=training_data, 
+                    # epochs=10, mini_batch_size=mini_batch_size, eta=0.025, validation_data=validation_data, test_data=test_data, lmbda=1)

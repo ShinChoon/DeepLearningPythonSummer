@@ -16,6 +16,7 @@ from theano import printing
 from theano.tensor.nnet import conv
 from theano.tensor.nnet import conv2d
 from theano.tensor.nnet import softmax
+import tensorflow as tf
 from theano.tensor import shared_randomstreams
 from theano.tensor.signal.pool import pool_2d
 
@@ -82,6 +83,34 @@ else:
         "network3.py to set\nthe GPU flag to True.")
 
 
+def bin_float(reciv_str):
+    #remove decimal
+    digit_location = reciv_str.find('.')
+    if digit_location != -1:
+        clip_str = reciv_str[(digit_location+1):]
+    else:
+        clip_str = reciv_str
+    P_flag = False if clip_str[0] == '1' else True
+    str_num = clip_str[1:]
+    reverse_num = str_num[::-1]
+    answer = 0.0
+    factor = 0
+    for i in reverse_num:
+
+        answer = answer + int(i) * 0.0625 * 2**factor
+        factor = factor + 1
+
+    factor = 0
+    if digit_location != -1:
+        for i in reciv_str[0:digit_location]:
+            answer = answer + int(i) * 1 * 2**factor
+            factor = factor + 1
+
+    if not P_flag:
+        answer = -1 * answer
+
+    return answer
+
 def float_bin(number, places=4):
     source = float("{:.4f}".format(number))
     N_flag = True if source <= 0 else False
@@ -132,10 +161,20 @@ def save_data_shared(filename, params, columns):
     """
     param_list = [param.get_value() for param in params]
     _param_list_result = []
+    _decoded_params = []
     for param in param_list:
         _param_result = quantitatize_layer(param)
         _param_list_result.append(_param_result)
-    # _param_list_result = np.array(_param_list_result)
+
+    for param in _param_list_result:
+        _param_result = dequantitatize_layer(param)
+        _decoded_params.append(_param_result)
+    
+    decoded_params_output = []
+    for decod_i in _decoded_params:
+        array = np.array(decod_i).astype(np.float32)
+        decoded_params_output.append(array)
+    
     
     # quantitation of weights
     # weights = [quantitatize_layer(param_list[0])]
@@ -172,7 +211,11 @@ def save_data_shared(filename, params, columns):
     # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
     # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
-    np.savetxt('param_w.csv', weights, fmt='%s', delimiter='')
+    np.savetxt('params.csv', param_list, fmt='%s', delimiter='')
+    np.savetxt('param_decoded.csv', _decoded_params,
+               fmt='%s', delimiter='')
+
+    return decoded_params_output
 
 
 def quantitatize_layer(params):
@@ -180,6 +223,7 @@ def quantitatize_layer(params):
     #debug
     params = np.array(params)
     _params_result=[]
+    print("params shape: ", params.shape)
     if len(params.shape) > 2: #normally for Conv
         for neuron in params:  # in one kernel
             # print("neuron: ", neuron)
@@ -215,19 +259,48 @@ def quantitatize_layer(params):
     return _params_result
 
 
-
-def quantitatize_layer_bias(params):
+def dequantitatize_layer(params):
     # params: one layer
     #debug
-    columns_set = []
-    for layer in params:  # in one layer
-        columns = []
-        for C in range(len(layer)):
-            float_number = float("{:.5f}".format(layer[C]))
-            columns.append(float_bin(float_number))
-        columns_set.append(columns)
+    params = np.array(params)
+    _params_result = []
+    if len(params.shape) > 2:  # normally for Conv
+        for neuron in params:  # in one kernel
+            # print("neuron: ", neuron)
+            _neuron_result = []
+            for ele in neuron:
+                _ele_result = []
+                for C in ele:
+                    _C_result = []
+                    for index in range(len(C)):
+                        # C[index] = float("{:.5f}".format(C[index]))
+                        # float_result = float_bin(C[index])
+                        float_result = str(bin_float(C[index]))
+                        _C_result.append(float_result)
+                    _ele_result.append(_C_result)
+                _neuron_result.append(_ele_result)
+            _params_result.append(_neuron_result)
 
-    return columns_set
+    elif len(params.shape) == 2:  # normally for MLP
+        _params_result = []
+        for C in params:
+            _C_result = []
+            for index in range(len(C)):
+                # C[index] = float("{:.5f}".format(C[index]))
+                # float_result = float_bin(C[index])
+                float_result = str(bin_float(C[index]))
+                _C_result.append(float_result)
+            _params_result.append(_C_result)
+    else:  # normally for bias
+        _params_result = []
+        for index in range(len(params)):
+            # params[index] = float("{:.5f}".format(params[index]))
+            # float_result = float_bin(params[index])
+            float_result = str(bin_float(params[index]))
+            _params_result.append(float_result)
+
+    return _params_result
+
 
 def downgrade_dimension(params):
     result= [e for f in params[0] for e in f]
@@ -308,6 +381,7 @@ class Network(object):
         self.y_accuracy_evaluate = self.epoch_index*2  # Y-axis points
         # expand the assigning process in for loop to skip the pool layer
         self.params =  [] 
+        self.decoded_params = []
         self.columns = []
         self.rows = []
         for layer in self.layers:
@@ -394,6 +468,7 @@ class Network(object):
         cost_list_local = np.array([0])
         accuracy_list_local = np.array([0])
         best_validation_accuracy = 0.0
+        best_iteration = 0
         for epoch in range(epochs):
             for minibatch_index in range(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
@@ -423,24 +498,49 @@ class Network(object):
             self.cost_list = np.append(self.cost_list, cost_mean)
             self.accuracy_list = np.append(self.accuracy_list,accuracy_mean)
 
-                    
-        #I move to here because the test could be in the end
-        if test_data:
-            test_accuracy = np.mean(
-                [test_mb_accuracy(j) for j in range(num_test_batches)])
-            print('The corresponding test accuracy is {0:.2%}'.format(
-                test_accuracy))
-            # test_predictions = [self.test_mb_predictions(j) for j in range(num_test_batches)]
-            # for prediction in test_predictions:
-            #     print('The corresponding test prediction is ', prediction)
             
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
-        print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
+        # print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
         print("self.columns:",self.columns)
         print("self.rows:",self.rows)  
-        save_data_shared("params.csv", self.params, self.columns) 
+
+        if test_data:
+            test_accuracy = np.mean(
+                [test_mb_accuracy(j) for j in range(num_test_batches)])
+            print('1st corresponding test accuracy is {0:.2%}'.format(
+                test_accuracy))
+
+        self.decoded_params = save_data_shared("params.csv", self.params, self.columns)
+
+
+        for index in range(len(self.decoded_params)):
+            print("index:  ", index)
+
+            if index % 2 == 0:
+                if not self.layers[int(index/2)].skip_paramterize():
+                    array_w = np.array(self.layers[int(index/2)].w.get_value())
+                    print("decod_i shape: ", self.decoded_params[int(index/2)].shape)
+                    print("param shape: ", array_w.shape)
+                    self.layers[int(
+                        index/2)].w.set_value(self.decoded_params[int(index/2)])
+
+            else:
+                if not self.layers[int((index-1)/2)].skip_paramterize():
+                    array_b = np.array(self.layers[int((index-1)/2)].b.get_value())
+                    print("decod_i shape: ", self.decoded_params[int((index-1)/2)+1].shape)
+                    print("param shape: ", array_b.shape)
+                    self.layers[int((index-1)/2)
+                                ].b.set_value(self.decoded_params[int((index-1)/2)+1])
+
+        if test_data:
+            test_accuracy = np.mean(
+                [test_mb_accuracy(j) for j in range(num_test_batches)])
+            print('2nd corresponding test accuracy is {0:.2%}'.format(
+                test_accuracy))
+
+
         # fig, axs = plt.subplots(1,2)
         # axs[0].plot(self.epoch_index, self.cost_list, "-.", label= "cost-train")  # Plot the chart
         # axs[0].set_title("cost-train")
@@ -450,7 +550,98 @@ class Network(object):
         #     ax.label_outer()
         # plt.show()  # display
 
-#### Define layer types
+
+    def test_accuracy(self, training_data, epochs, mini_batch_size, eta,
+                      validation_data, test_data, lmbda=0.0):
+        # compute number of minibatches for training, validation and testing
+
+        training_x, training_y = training_data
+        validation_x, validation_y = validation_data
+        test_x, test_y = test_data
+        num_training_batches = 1
+        num_validation_batches = 1
+        num_test_batches = int(size(test_data)/mini_batch_size)
+
+        w_layers = []
+        for layer in self.layers:
+            if not layer.skip_paramterize():
+                w_layers.append((layer.w**2).sum())
+        l2_norm_squared = sum(w_layers)
+        cost_train = self.layers[-1].cost(self) +\
+            0.5*lmbda*l2_norm_squared/num_training_batches
+        # need to make grads integer
+        
+       
+        grads = T.grad(cost_train, self.decoded_params)
+        # need to make eta as resolution of quantitation
+        updates = [(param, param-eta*grad)
+                   for param, grad in zip(self.decoded_params, grads)]
+
+        i = T.lscalar()  # mini-batch index
+        train_mb = theano.function(
+            [i], cost_train, updates=updates,
+            givens={
+                self.x:
+                training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+                self.y:
+                training_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+            })
+        validate_mb_accuracy = theano.function(
+            [i], self.layers[-1].accuracy(self.y),
+            givens={
+                self.x:
+                validation_x[i *
+                             self.mini_batch_size: (i+1)*self.mini_batch_size],
+                self.y:
+                validation_y[i *
+                             self.mini_batch_size: (i+1)*self.mini_batch_size]
+            })
+        test_mb_accuracy = theano.function(
+            [i], self.layers[-1].accuracy(self.y),
+            givens={
+                self.x:
+                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+                self.y:
+                test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+            })
+
+        # Do the actual training
+        cost_list_local = np.array([0])
+        accuracy_list_local = np.array([0])
+        best_validation_accuracy = 0.0
+        for minibatch_index in range(num_training_batches):
+            iteration = num_training_batches*1+minibatch_index
+            if iteration % 1000 == 0:
+                print("Training mini-batch number {0}".format(iteration))
+            cost_ij = train_mb(minibatch_index)
+            cost_list_local = np.append(cost_list_local, cost_ij)
+            if (iteration+1) % num_training_batches == 0:
+                validation_accuracy = np.mean(
+                    [validate_mb_accuracy(j) for j in range(num_validation_batches)])
+                if validation_accuracy >= best_validation_accuracy:
+                    print("This is the best validation accuracy to date.")
+                    best_validation_accuracy = validation_accuracy
+                    best_iteration = iteration
+                    accuracy_list_local = np.append(
+                        accuracy_list_local, best_validation_accuracy)
+
+        cost_mean = np.mean(cost_list_local)
+        accuracy_mean = np.mean(accuracy_list_local)
+
+        self.cost_list = np.append(self.cost_list, cost_mean)
+        self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
+
+        print("Finished training network.")
+        print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
+            best_validation_accuracy, best_iteration))
+
+        if test_data:
+            test_accuracy = np.mean(
+                [test_mb_accuracy(j) for j in range(num_test_batches)])
+            print('3rd corresponding test accuracy is {0:.2%}'.format(
+                test_accuracy))
+
+
 
 class ConvLayer(object):
     """Used to create a combination of a convolutional and a max-pooling
