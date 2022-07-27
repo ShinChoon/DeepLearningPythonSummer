@@ -39,11 +39,11 @@ training_data, validation_data, test_data = network3.load_data_shared()
 mini_batch_size = 10
 
 #number of nuerons in Conv1
-CHNL1 = 8
-CHNL2 = 8
-CHNL3 = 16
-CHNL4 = 32
-CHNL5 = 64
+CHNL1 = 2
+CHNL2 = 4
+CHNL3 = 8
+CHNL4 = 8
+CHNL5 = 8
 
 pool_scale = 2
 conv_scale = 3
@@ -143,4 +143,23 @@ net = Network([
     MLP2,
     SMLayer
     ], mini_batch_size)
-net.SGD(training_data=training_data, epochs=1, mini_batch_size=mini_batch_size, eta=0.025, validation_data=validation_data, test_data=test_data, lmbda=10)
+
+
+
+accuracy_list = []
+test_accuracylist = []
+epoch_index = 10
+epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
+
+for i in range(epoch_index):
+  accuracy_trained, accuracy_test = net.SGD(training_data=training_data, epochs=10, mini_batch_size=mini_batch_size, eta=0.0625, validation_data=validation_data, test_data=test_data, lmbda=10)
+  accuracy_list.append(accuracy_trained)
+  test_accuracylist.append(accuracy_test)
+
+print("accuracy_list: ", accuracy_list)
+print("test_accuracylist: ", test_accuracylist)
+
+net.plot_n([epoch_indexs, epoch_indexs], [
+           accuracy_list, test_accuracylist], epoch_indexs)
+
+

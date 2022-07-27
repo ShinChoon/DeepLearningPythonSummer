@@ -11,8 +11,9 @@ import gzip
 
 # Third-party libraries
 import numpy as np
-import matplotlib.pyplot as plt
 import theano
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 import theano.tensor as T
 from theano import printing
 from theano.tensor.nnet import conv
@@ -147,6 +148,12 @@ def float_bin(number, places=4):
 
     return result
 
+def normal_initalization(_name, _shape):
+    array_factors = np.random.normal(loc=0, scale=0.013298, size=_shape)
+    array_limited = np.asarray(array_factors, dtype='int8') * 0.0625
+    array_limited_32 = np.asarray(array_limited, dtype=theano.config.floatX)
+    params = theano.shared(array_limited_32, name=_name, borrow=True)
+    return params
 
 def decimal_converter(num):
     while num > 1:
@@ -222,7 +229,6 @@ def quantitatize_layer(params):
     #debug
     params = np.array(params)
     _params_result = []
-    print("params shape: ", params.shape)
     if len(params.shape) > 2:  # normally for Conv
         for neuron in params:  # in one kernel
             # print("neuron: ", neuron)
@@ -524,27 +530,7 @@ class Network(object):
         self.decoded_params = save_data_shared(
             "params.csv", self.params, self.columns)
 
-        for index in range(len(self.decoded_params)):
-            print("index:  ", index)
-
-            if index % 2 == 0:
-                if not self.layers[int(index/2)].skip_paramterize():
-                    array_w = np.array(self.layers[int(index/2)].w.get_value())
-                    print("decod_i shape: ",
-                          self.decoded_params[int(index/2)].shape)
-                    print("param shape: ", array_w.shape)
-                    self.layers[int(
-                        index/2)].w.set_value(self.decoded_params[int(index/2)])
-
-            else:
-                if not self.layers[int((index-1)/2)].skip_paramterize():
-                    array_b = np.array(
-                        self.layers[int((index-1)/2)].b.get_value())
-                    print("decod_i shape: ",
-                          self.decoded_params[int((index-1)/2)+1].shape)
-                    print("param shape: ", array_b.shape)
-                    self.layers[int((index-1)/2)
-                                ].b.set_value(self.decoded_params[int((index-1)/2)+1])
+        self.reset_params()
 
         if test_data:
             test_accuracy = np.mean(
@@ -552,103 +538,46 @@ class Network(object):
             print('2nd corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
 
-        # fig, axs = plt.subplots(1,2)
-        # axs[0].plot(self.epoch_index, self.cost_list, "-.", label= "cost-train")  # Plot the chart
-        # axs[0].set_title("cost-train")
-        # axs[1].plot(self.epoch_index, self.accuracy_list, "-.", label= "accuracy-vali")  # Plot the chart
-        # axs[1].set_title("accuracy-vali")
-        # for ax in axs.flat:
-        #     ax.label_outer()
-        # plt.show()  # display
+        print('trained accuracy is {0:.2%}'.format(
+            max(self.accuracy_list)))
 
-    def test_accuracy(self, training_data, epochs, mini_batch_size, eta,
-                      validation_data, test_data, lmbda=0.0):
-        # compute number of minibatches for training, validation and testing
+        return '{0:.2%}'.format(max(self.accuracy_list)), '{0:.2%}'.format(test_accuracy)
 
-        training_x, training_y = training_data
-        validation_x, validation_y = validation_data
-        test_x, test_y = test_data
-        num_training_batches = 1
-        num_validation_batches = 1
-        num_test_batches = int(size(test_data)/mini_batch_size)
 
-        w_layers = []
-        for layer in self.layers:
-            if not layer.skip_paramterize():
-                w_layers.append((layer.w**2).sum())
-        l2_norm_squared = sum(w_layers)
-        cost_train = self.layers[-1].cost(self) +\
-            0.5*lmbda*l2_norm_squared/num_training_batches
-        # need to make grads integer
+            
 
-        grads = T.grad(cost_train, self.decoded_params)
-        # need to make eta as resolution of quantitation
-        updates = [(param, param-eta*grad)
-                   for param, grad in zip(self.decoded_params, grads)]
+    def plot_n(self, indexlists, valuelists, labellist):
+        if len(indexlists) == len(valuelists) == len(labellist)==2:
+            fig, (ax1, ax2) = plt.subplots(len(indexlists),1)
+            ax1.plot(indexlists[0], valuelists[0], "-.", 
+                     label=labellist[0])  # Plot the chart
+            ax1.set_title(label=labellist[0])
+            ax2.plot(indexlists[1], valuelists[1], "-.",
+                     label=labellist[1])  # Plot the chart
+            ax2.set_title(label=labellist[1])
+            ax1.label_outer()
+            ax2.label_outer()
+            plt.show()  # display
 
-        i = T.lscalar()  # mini-batch index
-        train_mb = theano.function(
-            [i], cost_train, updates=updates,
-            givens={
-                self.x:
-                training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
-                self.y:
-                training_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
-            })
-        validate_mb_accuracy = theano.function(
-            [i], self.layers[-1].accuracy(self.y),
-            givens={
-                self.x:
-                validation_x[i *
-                             self.mini_batch_size: (i+1)*self.mini_batch_size],
-                self.y:
-                validation_y[i *
-                             self.mini_batch_size: (i+1)*self.mini_batch_size]
-            })
-        test_mb_accuracy = theano.function(
-            [i], self.layers[-1].accuracy(self.y),
-            givens={
-                self.x:
-                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
-                self.y:
-                test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
-            })
 
-        # Do the actual training
-        cost_list_local = np.array([0])
-        accuracy_list_local = np.array([0])
-        best_validation_accuracy = 0.0
-        for minibatch_index in range(num_training_batches):
-            iteration = num_training_batches*1+minibatch_index
-            if iteration % 1000 == 0:
-                print("Training mini-batch number {0}".format(iteration))
-            cost_ij = train_mb(minibatch_index)
-            cost_list_local = np.append(cost_list_local, cost_ij)
-            if (iteration+1) % num_training_batches == 0:
-                validation_accuracy = np.mean(
-                    [validate_mb_accuracy(j) for j in range(num_validation_batches)])
-                if validation_accuracy >= best_validation_accuracy:
-                    print("This is the best validation accuracy to date.")
-                    best_validation_accuracy = validation_accuracy
-                    best_iteration = iteration
-                    accuracy_list_local = np.append(
-                        accuracy_list_local, best_validation_accuracy)
+    def reset_params(self):
+        decode_index = -1
+        for index in range(len(self.decoded_params)):
+            if index % 2 == 0:
+                if not self.layers[int(index/2)].skip_paramterize():
+                    decode_index = decode_index + 1
+                    array_w = np.array(self.layers[int(index/2)].w.get_value())
+                    self.layers[int(
+                        index/2)].w.set_value(self.decoded_params[decode_index])
 
-        cost_mean = np.mean(cost_list_local)
-        accuracy_mean = np.mean(accuracy_list_local)
-
-        self.cost_list = np.append(self.cost_list, cost_mean)
-        self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
-
-        print("Finished training network.")
-        print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
-            best_validation_accuracy, best_iteration))
-
-        if test_data:
-            test_accuracy = np.mean(
-                [test_mb_accuracy(j) for j in range(num_test_batches)])
-            print('3rd corresponding test accuracy is {0:.2%}'.format(
-                test_accuracy))
+            else:
+                if not self.layers[int((index-1)/2)].skip_paramterize():
+                    decode_index = decode_index + 1
+                    array_b = np.array(
+                        self.layers[int((index-1)/2)].b.get_value())
+                    self.layers[int((index-1)/2)
+                                ].b.set_value(self.decoded_params[decode_index])
+        
 
 
 class ConvLayer(object):
@@ -690,11 +619,17 @@ class ConvLayer(object):
                     1.0/n_out), size=filter_shape),
                 dtype=theano.config.floatX),
             borrow=True)
+        
+        # self.w = normal_initalization('w', filter_shape)
+        
         self.b = theano.shared(
             np.asarray(
                 np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
                 dtype=theano.config.floatX),
             borrow=True)
+
+        # self.b = normal_initalization('b', (filter_shape[0],))
+
         self.params = [self.w, self.b]
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
@@ -783,10 +718,17 @@ class FullyConnectedLayer(object):
                     loc=0.0, scale=np.sqrt(1.0/n_out), size=(n_in, n_out)),
                 dtype=theano.config.floatX),
             name='w', borrow=True)
+
+        # self.w = normal_initalization('w', (n_in, n_out))
+
+
         self.b = theano.shared(
             np.asarray(np.random.normal(loc=0.0, scale=1.0, size=(n_out,)),
                        dtype=theano.config.floatX),
             name='b', borrow=True)
+
+        # self.b = normal_initalization('b',(n_out,))
+
         self.params = [self.w, self.b]
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
@@ -820,6 +762,7 @@ class SoftmaxLayer(object):
         self.n_out = n_out
         self.p_dropout = p_dropout
         # Initialize weights and biases
+        # ???? all zero
         self.w = theano.shared(
             np.zeros((n_in, n_out), dtype=theano.config.floatX),
             name='w', borrow=True)
