@@ -45,7 +45,7 @@
 
 
 
-def float_bin(number, places=4):
+def float_bin(number, places):
     number = float(number)
     source = float("{:.4f}".format(number))   
     N_flag = True if source<=0 else False
@@ -64,7 +64,7 @@ def float_bin(number, places=4):
     else:
         res = bin(0).lstrip("0b")
 
-    for x in range(places):
+    for x in range(int(places)):
         
         answer = (decimal_converter(float(dec))) * 2
         # Convert the decimal part
@@ -96,7 +96,8 @@ def decimal_converter(num):
     return num
 
 n = input("Enter your floating point value : \n") 
+bits = input("Enter your bits : \n")
 # Take user input for the number of
 # decimal places user want result as
  
-print(float_bin(n))
+print(float_bin(n,bits))

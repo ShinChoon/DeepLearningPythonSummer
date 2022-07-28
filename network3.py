@@ -117,7 +117,7 @@ def bin_float(reciv_str):
 def float_bin(number, places=4):
     source = float("{:.4f}".format(number))
     N_flag = True if source <= 0 else False
-    _number = source if source >= 0 else -1*source
+    _number = source if source >= 0 else -1 * source
     whole, dec = str(source).split(".")
     dec = int(dec)
     whole = int(whole)
@@ -217,7 +217,7 @@ def save_data_shared(filename, params, columns):
     # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
     # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
-    np.savetxt('params.csv', param_list, fmt='%s', delimiter='')
+    np.savetxt('params.csv', _param_list_result, fmt='%s', delimiter='')
     np.savetxt('param_decoded.csv', _decoded_params,
                fmt='%s', delimiter='')
 
@@ -238,8 +238,9 @@ def quantitatize_layer(params):
                 for C in ele:
                     _C_result = []
                     for index in range(len(C)):
-                        C[index] = float("{:.5f}".format(C[index]))
-                        float_result = float_bin(C[index])
+                        abs_normalize = abs(C).max()
+                        _C_q = C[index]/abs_normalize*0.9375
+                        float_result = float_bin(_C_q)
                         _C_result.append(float_result)
                     _ele_result.append(_C_result)
                 _neuron_result.append(_ele_result)
@@ -250,15 +251,17 @@ def quantitatize_layer(params):
         for C in params:
             _C_result = []
             for index in range(len(C)):
-                C[index] = float("{:.5f}".format(C[index]))
-                float_result = float_bin(C[index])
+                abs_normalize = abs(C).max()
+                _C_q = C[index]/abs_normalize*0.9375
+                float_result = float_bin(_C_q)
                 _C_result.append(float_result)
             _params_result.append(_C_result)
     else:  # normally for bias
         _params_result = []
         for index in range(len(params)):
-            params[index] = float("{:.5f}".format(params[index]))
-            float_result = float_bin(params[index])
+            abs_normalize = abs(params).max()
+            _param_q = params[index]/abs_normalize*0.9375
+            float_result = float_bin(_param_q)
             _params_result.append(float_result)
 
     return _params_result
@@ -313,7 +316,6 @@ def downgrade_dimension(params):
 
 
 def repeat_by_column_weights(source, columns):
-    print("source: ", source)
     repeat_source_printout = []
     for h in source:  # in one layer
         repeat_source = []
@@ -514,6 +516,7 @@ class Network(object):
             self.cost_list = np.append(self.cost_list, cost_mean)
             self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
 
+
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
@@ -521,27 +524,20 @@ class Network(object):
         print("self.columns:", self.columns)
         print("self.rows:", self.rows)
 
+        # encode and decode the params
+        self.decoded_params = save_data_shared(
+            "params.csv", self.params, self.columns)
+
+        self.reset_params()
+        
         if test_data:
             test_accuracy = np.mean(
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
             print('1st corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
 
-        self.decoded_params = save_data_shared(
-            "params.csv", self.params, self.columns)
 
-        self.reset_params()
-
-        if test_data:
-            test_accuracy = np.mean(
-                [test_mb_accuracy(j) for j in range(num_test_batches)])
-            print('2nd corresponding test accuracy is {0:.2%}'.format(
-                test_accuracy))
-
-        print('trained accuracy is {0:.2%}'.format(
-            max(self.accuracy_list)))
-
-        return '{0:.2%}'.format(max(self.accuracy_list)), '{0:.2%}'.format(test_accuracy)
+        return max(self.accuracy_list), test_accuracy
 
 
             

@@ -148,11 +148,11 @@ net = Network([
 
 accuracy_list = []
 test_accuracylist = []
-epoch_index = 10
+epoch_index = 1
 epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
 
 for i in range(epoch_index):
-  accuracy_trained, accuracy_test = net.SGD(training_data=training_data, epochs=10, mini_batch_size=mini_batch_size, eta=0.0625, validation_data=validation_data, test_data=test_data, lmbda=10)
+  accuracy_trained, accuracy_test = net.SGD(training_data=training_data, epochs=1, mini_batch_size=mini_batch_size, eta=0.0625, validation_data=validation_data, test_data=test_data, lmbda=1)
   accuracy_list.append(accuracy_trained)
   test_accuracylist.append(accuracy_test)
 
