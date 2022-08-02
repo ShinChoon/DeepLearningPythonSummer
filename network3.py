@@ -39,10 +39,10 @@ class QuadraticCost(object):
         """
         return 0.5*np.linalg.norm(a-y)**2
 
-    @staticmethod
-    def delta(z, a, y):
-        """Return the error delta from the output layer."""
-        return (a-y) * sigmoid_prime(z)
+    # @staticmethod
+    # def delta(z, a, y):
+    #     """Return the error delta from the output layer."""
+    #     return (a-y) * sigmoid_prime(z)
 
 
 class CrossEntropyCost(object):
@@ -117,7 +117,8 @@ def bin_float(reciv_str):
 def float_bin(number, places=4):
     source = float("{:.4f}".format(number))
     N_flag = True if source <= 0 else False
-    _number = source if source >= 0 else -1 * source
+    _source = 0 if abs(source) < 0.0625 else source
+    _number = _source if _source >= 0 else -1 * _source
     whole, dec = str(source).split(".")
     dec = int(dec)
     whole = int(whole)
@@ -483,11 +484,11 @@ class Network(object):
                 test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
         # Do the actual training
-        cost_list_local = np.array([0])
-        accuracy_list_local = np.array([0])
         best_validation_accuracy = 0.0
         best_iteration = 0
         for epoch in range(epochs):
+            cost_list_local = np.array([0])
+            accuracy_list_local = np.array([0])
             for minibatch_index in range(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
                 if iteration % 1000 == 0:
@@ -503,19 +504,19 @@ class Network(object):
                         print("This is the best validation accuracy to date.")
                         best_validation_accuracy = validation_accuracy
                         best_iteration = iteration
-                        accuracy_list_local = np.append(
-                            accuracy_list_local, best_validation_accuracy)
+                    accuracy_list_local = np.append(
+                        accuracy_list_local, validation_accuracy)
 
-            cost_mean = np.mean(cost_list_local)
-            accuracy_mean = np.mean(accuracy_list_local)
-
-            print("Epoch {0}: training_cost {1}".format(
-                epoch, cost_mean))
+            print("accuracy_list_local", accuracy_list_local)
+            print("cost_list_local", cost_list_local)
+            cost_mean = cost_list_local[-1]
+            accuracy_mean = accuracy_list_local[-1]
+            print("Epoch {0}: training_cost {1}, accuracy {2}".format(
+                epoch, cost_mean, accuracy_mean))
 
             self.epoch_index = np.append(self.epoch_index, epoch)
             self.cost_list = np.append(self.cost_list, cost_mean)
             self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
-
 
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
@@ -529,31 +530,16 @@ class Network(object):
             "params.csv", self.params, self.columns)
 
         self.reset_params()
-        
+
         if test_data:
             test_accuracy = np.mean(
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
             print('1st corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
 
+        print("self.accuracy_list: ", self.accuracy_list)
 
-        return max(self.accuracy_list), test_accuracy
-
-
-            
-
-    def plot_n(self, indexlists, valuelists, labellist):
-        if len(indexlists) == len(valuelists) == len(labellist)==2:
-            fig, (ax1, ax2) = plt.subplots(len(indexlists),1)
-            ax1.plot(indexlists[0], valuelists[0], "-.", 
-                     label=labellist[0])  # Plot the chart
-            ax1.set_title(label=labellist[0])
-            ax2.plot(indexlists[1], valuelists[1], "-.",
-                     label=labellist[1])  # Plot the chart
-            ax2.set_title(label=labellist[1])
-            ax1.label_outer()
-            ax2.label_outer()
-            plt.show()  # display
+        return self.accuracy_list[-1], test_accuracy, self.cost_list[-1]
 
 
     def reset_params(self):

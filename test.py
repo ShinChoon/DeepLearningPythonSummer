@@ -30,8 +30,18 @@ def testTheano():
 # - network3.py example:
 import network3
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 from network3 import ReLU
 from network3 import Network, ConvLayer, PoolLayer, FullyConnectedLayer, SoftmaxLayer # softmax plus log-likelihood cost is more common in modern image classification networks.
+
+###for test
+accuracy_list = []
+test_accuracylist = []
+cost_list = []
+epoch_index = 10
+epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
+
 
 # read data:
 training_data, validation_data, test_data = network3.load_data_shared()
@@ -39,11 +49,11 @@ training_data, validation_data, test_data = network3.load_data_shared()
 mini_batch_size = 10
 
 #number of nuerons in Conv1
-CHNL1 = 2
-CHNL2 = 4
-CHNL3 = 8
-CHNL4 = 8
-CHNL5 = 8
+CHNL1 = 8
+CHNL2 = 16
+CHNL3 = 16
+CHNL4 = 32
+CHNL5 = 64
 
 pool_scale = 2
 conv_scale = 3
@@ -89,77 +99,95 @@ filter_shape6=(i_f_map[5][2], i_f_map[5][3], conv_scale, conv_scale)
 image_shape7 = (mini_batch_size, i_f_map[5][2], i_f_map[6][0], i_f_map[6][1])
 filter_shape7 = (i_f_map[6][2], i_f_map[6][3], conv_scale, conv_scale)
 
-Conv1 = ConvLayer(image_shape=image_shape1,
-                  filter_shape=filter_shape1,
-                  poolsize=(pool_scale, pool_scale),
-                  activation_fn=ReLU,border_mode='full') ## become 28 - 3 + 1 = 26
+def create_and_test():
 
-Conv1_2 = ConvLayer(image_shape=image_shape2, 
-                  filter_shape=filter_shape2,
-                  poolsize=(pool_scale, pool_scale),
-                  activation_fn=ReLU,border_mode='valid')
+    Conv1 = ConvLayer(image_shape=image_shape1,
+                      filter_shape=filter_shape1,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU,border_mode='full') ## become 28 - 3 + 1 = 26
 
-Pool1 = PoolLayer(image_shape=image_shape3,
-                  filter_shape=filter_shape3,
-                  poolsize=(pool_scale, pool_scale),
-                  activation_fn=ReLU, _params=Conv1_2.params)
+    Conv1_2 = ConvLayer(image_shape=image_shape2, 
+                      filter_shape=filter_shape2,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU,border_mode='valid')
 
-Conv2 = ConvLayer(image_shape=image_shape4,
-                  filter_shape=filter_shape4,
-                  poolsize=(pool_scale, pool_scale),
-                  activation_fn=ReLU,border_mode='valid')
+    Pool1 = PoolLayer(image_shape=image_shape3,
+                      filter_shape=filter_shape3,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU, _params=Conv1_2.params)
 
-Conv2_2 = ConvLayer(image_shape=image_shape5,
-                  filter_shape=filter_shape5,
-                  poolsize=(pool_scale, pool_scale),
-                  activation_fn=ReLU, border_mode='valid')
+    Conv2 = ConvLayer(image_shape=image_shape4,
+                      filter_shape=filter_shape4,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU,border_mode='valid')
 
-Conv2_3 = ConvLayer(image_shape=image_shape6,
-                    filter_shape=filter_shape6,
-                    poolsize=(pool_scale, pool_scale),
-                    activation_fn=ReLU, border_mode='valid')
+    Conv2_2 = ConvLayer(image_shape=image_shape5,
+                      filter_shape=filter_shape5,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU, border_mode='valid')
 
-Pool2 = PoolLayer(image_shape=image_shape7,
-                  filter_shape=filter_shape7,
-                  poolsize=(pool_scale, pool_scale),
-                  activation_fn=ReLU, _params=Conv2_3.params) ## become 24 / 2 = 12
-            
-MLP1 = FullyConnectedLayer(n_in=i_f_map[7][2]*i_f_map[7][0]*i_f_map[7][1], n_out=i_f_map[8]
-                           [2]*i_f_map[8][0]*i_f_map[8][1], activation_fn=ReLU, p_dropout=0.5)
-MLP2 = FullyConnectedLayer(n_in=i_f_map[8][2]*i_f_map[8][0]*i_f_map[8][1], n_out=i_f_map[9][0], activation_fn=ReLU, p_dropout=0.5)
+    Conv2_3 = ConvLayer(image_shape=image_shape6,
+                        filter_shape=filter_shape6,
+                        poolsize=(pool_scale, pool_scale),
+                        activation_fn=ReLU, border_mode='valid')
 
-SMLayer = SoftmaxLayer(n_in=i_f_map[9][0], n_out=i_f_map[9][1])
+    Pool2 = PoolLayer(image_shape=image_shape7,
+                      filter_shape=filter_shape7,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU, _params=Conv2_3.params) ## become 24 / 2 = 12
 
+    MLP1 = FullyConnectedLayer(n_in=i_f_map[7][2]*i_f_map[7][0]*i_f_map[7][1], n_out=i_f_map[8]
+                               [2]*i_f_map[8][0]*i_f_map[8][1], activation_fn=ReLU, p_dropout=0.5)
+    MLP2 = FullyConnectedLayer(n_in=i_f_map[8][2]*i_f_map[8][0]*i_f_map[8][1], n_out=i_f_map[9][0], activation_fn=ReLU, p_dropout=0.5)
 
-net = Network([
-    Conv1,
-    Conv1_2,
-    Pool1,
-    Conv2,
-    Conv2_2,
-    Conv2_3,
-    Pool2,
-    MLP1,
-    MLP2,
-    SMLayer
-    ], mini_batch_size)
+    SMLayer = SoftmaxLayer(n_in=i_f_map[9][0], n_out=i_f_map[9][1])
 
 
+    net = Network([
+        Conv1,
+        Conv1_2,
+        Pool1,
+        Conv2,
+        Conv2_2,
+        Conv2_3,
+        Pool2,
+        MLP1,
+        MLP2,
+        SMLayer
+        ], mini_batch_size)
 
-accuracy_list = []
-test_accuracylist = []
-epoch_index = 1
-epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
+
+    accuracy_trained, accuracy_test, cost = net.SGD(training_data=training_data, epochs=10, mini_batch_size=mini_batch_size, eta=0.03, validation_data=validation_data, test_data=test_data, lmbda=0.1)
+
+    return accuracy_trained, accuracy_test, cost
+
+def plot_n(indexlists, valuelists, labellist):
+    if len(indexlists) == len(valuelists) == len(labellist):
+        fig, (ax1, ax2, ax3) = plt.subplots(len(indexlists), 1)
+        ax1.plot(indexlists[0], valuelists[0], "-.",
+                 label=labellist[0])  # Plot the chart
+        ax1.set_title(label=labellist[0])
+        ax1.label_outer()
+        ax2.plot(indexlists[1], valuelists[1], "-.",
+                 label=labellist[1])  # Plot the chart
+        ax2.set_title(label=labellist[1])
+        ax2.label_outer()
+        ax3.plot(indexlists[2], valuelists[2], "-.",
+                 label=labellist[2])  # Plot the chart
+        ax3.set_title(label=labellist[2])
+        ax3.label_outer()
+        plt.show()  # display
 
 for i in range(epoch_index):
-  accuracy_trained, accuracy_test = net.SGD(training_data=training_data, epochs=1, mini_batch_size=mini_batch_size, eta=0.0625, validation_data=validation_data, test_data=test_data, lmbda=1)
-  accuracy_list.append(accuracy_trained)
-  test_accuracylist.append(accuracy_test)
+    accuracy_trained, accuracy_test, cost = create_and_test()
+    accuracy_list.append(accuracy_trained)
+    test_accuracylist.append(accuracy_test)
+    cost_list.append(cost)
+    
+    print("accuracy_list= ", accuracy_list)
+    print("test_accuracylist= ", test_accuracylist)
+    print("cost_list= ", cost_list)
+    print("Now i = ", i)
 
-print("accuracy_list: ", accuracy_list)
-print("test_accuracylist: ", test_accuracylist)
-
-net.plot_n([epoch_indexs, epoch_indexs], [
-           accuracy_list, test_accuracylist], epoch_indexs)
-
+plot_n([epoch_indexs, epoch_indexs, epoch_indexs], [accuracy_list, test_accuracylist, cost_list], ["trained", "test", "cost"])
 
