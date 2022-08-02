@@ -1,56 +1,56 @@
-import tensorflow as tf
+# import tensorflow as tf
 import numpy as np
 
 
-# def float_bin(number, places=4):
-#     number = float(number)
-#     source = float("{:.4f}".format(number))   
-#     N_flag = True if source<=0 else False
-#     _number = source if source >= 0 else -1*source
-#     whole, dec = str(source).split(".")
+def float_bin(number, places=4):
+    number = float(number)
+    source = float("{:.4f}".format(number))   
+    N_flag = True if source<=0 else False
+    _number = source if source >= 0 else -1*source
+    whole, dec = str(source).split(".")
 
-#     dec = int(dec)
-#     whole = int(whole)
+    dec = int(dec)
+    whole = int(whole)
 
-#     dec = _number - int(whole)
+    dec = _number - int(whole)
 
-#     res = bin(0).lstrip("0b")
-#     if whole > 0:
-#     #detect if any value more than 1
-#         res = bin(whole).lstrip("0b") + "."
-#     else:
-#         res = bin(0).lstrip("0b")
+    res = bin(0).lstrip("0b")
+    if whole > 0:
+    #detect if any value more than 1
+        res = bin(whole).lstrip("0b") + "."
+    else:
+        res = bin(0).lstrip("0b")
 
-#     for x in range(places):
+    for x in range(places):
         
-#         answer = (decimal_converter(float(dec))) * 2
-#         # Convert the decimal part
-#         # to float 4-digit again
-#         whole, _dec = str(answer).split(".")
-#         print("answer: ", answer)
-#         print("whole: ", whole)
-#         if answer > 0:
-#             dec = answer - int(whole)
-#         else:
-#             whole, _dec = str(0.0).split(".")
+        answer = (decimal_converter(float(dec))) * 2
+        # Convert the decimal part
+        # to float 4-digit again
+        whole, _dec = str(answer).split(".")
+        print("answer: ", answer)
+        print("whole: ", whole)
+        if answer > 0:
+            dec = answer - int(whole)
+        else:
+            whole, _dec = str(0.0).split(".")
 
-#         # Keep adding the integer parts
-#         # receive to the result variable
-#         res += whole
+        # Keep adding the integer parts
+        # receive to the result variable
+        res += whole
  
-#     result = str(res)
+    result = str(res)
 
-#     if N_flag:
-#         result = '1' + result
-#     else:
-#         result = '0' + result
+    if N_flag:
+        result = '1' + result
+    else:
+        result = '0' + result
   
-#     return result
+    return result
 
-# def decimal_converter(num):
-#     while num > 1:
-#         num /= 10
-#     return num
+def decimal_converter(num):
+    while num > 1:
+        num /= 10
+    return num
 
 
 # def bin_float(reciv_str):
@@ -83,19 +83,8 @@ import numpy as np
 
 
 
-# n = input("Enter your floating point value : \n") 
-# # Take user input for the number of
-# # decimal places user want result as
+n = input("Enter your floating point value : \n") 
+# Take user input for the number of
+# decimal places user want result as
  
-# print(bin_float(n))
-
-
-array = np.array(
-    [[[1, 2, 3], [3, 4, 5]], [5, 6, 7]])
-print("This is a numpy array:")
-print(array, array.shape, type(array))
-tensor_array = []
-for i in array:
-    tensor = tf.convert_to_tensor(i)
-    tensor_array.append(tensor)
-print(tensor_array)
+print(float_bin(n))
