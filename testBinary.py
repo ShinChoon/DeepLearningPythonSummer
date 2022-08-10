@@ -1,3 +1,4 @@
+import numpy as np
 
 # def float_bin(number, places=4):
 #     source = float(number)
@@ -47,6 +48,8 @@
 
 def float_bin(number, places):
     number = float(number)
+    if np.isnan(number):
+        number =  0
     source = float("{:.4f}".format(number))   
     N_flag = True if source<=0 else False
     _number = source if source >= 0 else -1*source

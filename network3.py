@@ -115,6 +115,8 @@ def bin_float(reciv_str):
 
 
 def float_bin(number, places=4):
+    if np.isnan(number):
+        number = 0
     source = float("{:.4f}".format(number))
     N_flag = True if source <= 0 else False
     _source = 0 if abs(source) < 0.0625 else source
@@ -404,7 +406,7 @@ class Network(object):
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
-        for layer in self.layers[:-2]:
+        for layer in self.layers[:-1]:
             if not layer.skip_paramterize():
                 self.columns.append(layer.column)
                 self.rows.append(layer.row)
@@ -507,11 +509,9 @@ class Network(object):
                     accuracy_list_local = np.append(
                         accuracy_list_local, validation_accuracy)
 
-            print("accuracy_list_local", accuracy_list_local)
-            print("cost_list_local", cost_list_local)
-            cost_mean = cost_list_local[-1]
-            accuracy_mean = accuracy_list_local[-1]
-            print("Epoch {0}: training_cost {1}, accuracy {2}".format(
+            cost_mean = np.mean(cost_list_local[1:])
+            accuracy_mean = np.mean(accuracy_list_local[1:])
+            print("Epoch {0}: training_cost {1}, accuracy {2:.2%}".format(
                 epoch, cost_mean, accuracy_mean))
 
             self.epoch_index = np.append(self.epoch_index, epoch)
@@ -534,11 +534,15 @@ class Network(object):
         if test_data:
             test_accuracy = np.mean(
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
-            print('1st corresponding test accuracy is {0:.2%}'.format(
+            print('corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
 
         print("self.accuracy_list: ", self.accuracy_list)
 
+
+        # test_predictions = [self.test_mb_predictions(j) for j in range(num_test_batches)]
+        # for prediction in test_predictions:
+        #     print('The corresponding test prediction is ', prediction)
         return self.accuracy_list[-1], test_accuracy, self.cost_list[-1]
 
 
@@ -618,7 +622,7 @@ class ConvLayer(object):
         self.inpt = inpt.reshape(self.image_shape)
         conv_out = conv2d(
             input=self.inpt, filters=self.w, filter_shape=self.filter_shape,
-            image_shape=self.image_shape, border_mode=self.border_mode)
+            input_shape=self.image_shape, border_mode=self.border_mode)
         activated_out = self.activation_fn(
             conv_out + self.b.dimshuffle('x', 0, 'x', 'x'))
         self.output = activated_out

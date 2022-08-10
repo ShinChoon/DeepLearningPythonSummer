@@ -49,26 +49,28 @@ training_data, validation_data, test_data = network3.load_data_shared()
 mini_batch_size = 10
 
 #number of nuerons in Conv1
-CHNL1 = 8
-CHNL2 = 16
-CHNL3 = 16
-CHNL4 = 32
-CHNL5 = 64
+CHNL1 = 1
+CHNL2 = 2
+CHNL3 = 2
+CHNL4 = 3
+CHNL5 = 4
+CHNL6 = 4
+CHNL7 = 10
 
 pool_scale = 2
 conv_scale = 3
 image_scale = 28
 # image width, image height, filter maps number, input maps number
 i_f_map = ((28,28,CHNL1,1), 
-            (30,30,CHNL1,CHNL1),
-            (28,28,CHNL1,CHNL1), 
-            (14,14,CHNL3,CHNL1),
+            (30,30,CHNL2,CHNL1),
+            (28,28,CHNL2,CHNL2), #Pool
+            (14,14,CHNL3,CHNL2), 
             (12,12,CHNL4,CHNL3),  
             (10,10,CHNL5,CHNL4),  
-            (8,8,CHNL5,CHNL5), 
-            (4,4,CHNL5,CHNL5),
-            (4,4,CHNL5,CHNL5),
-            (100,10)
+            (8,8,CHNL5,CHNL5), #Pool
+            (4,4,CHNL6,CHNL5),
+            (4,4,CHNL7,CHNL6),
+            (160,10)
         )
 
 #Conv1
