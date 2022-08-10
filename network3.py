@@ -113,6 +113,8 @@ def bin_float(reciv_str):
 
 
 def float_bin(number, places=4):
+    if np.isnan(number):
+        number = 0
     source = float("{:.4f}".format(number))
     N_flag = True if source <= 0 else False
     _number = source if source >= 0 else -1*source
@@ -405,7 +407,7 @@ class Network(object):
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
-        for layer in self.layers[:-1]:
+        for layer in self.layers[:-3]: #skip softmax and MLP
             if not layer.skip_paramterize():
                 self.columns.append(layer.column)
                 self.rows.append(layer.row)
@@ -509,11 +511,9 @@ class Network(object):
                         accuracy_list_local, validation_accuracy)
                         
 
-            print("accuracy_list_local", accuracy_list_local)
-            print("cost_list_local", cost_list_local)
-            cost_mean = cost_list_local[-1]
-            accuracy_mean = accuracy_list_local[-1]
-            print("Epoch {0}: training_cost {1}, accuracy {2}".format(
+            cost_mean = np.mean(cost_list_local[1:])
+            accuracy_mean = np.mean(accuracy_list_local[1:])
+            print("Epoch {0}: training_cost {1}, accuracy {2:.2%}".format(
                 epoch, cost_mean, accuracy_mean))
 
             self.epoch_index = np.append(self.epoch_index, epoch)
@@ -521,6 +521,11 @@ class Network(object):
             self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
 
 
+            # encode and decode the params
+            self.decoded_params = save_data_shared(
+                "params.csv", self.params, self.columns)
+
+            self.reset_params()
 
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
@@ -529,20 +534,19 @@ class Network(object):
         print("self.columns:", self.columns)
         print("self.rows:", self.rows)
 
-        # encode and decode the params
-        self.decoded_params = save_data_shared(
-            "params.csv", self.params, self.columns)
-
-        self.reset_params()
         
         if test_data:
             test_accuracy = np.mean(
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
-            print('1st corresponding test accuracy is {0:.2%}'.format(
+            print('corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
 
         
         print("self.accuracy_list: ", self.accuracy_list)
+
+        # test_predictions = [self.test_mb_predictions(j) for j in range(num_test_batches)]
+        # for prediction in test_predictions:
+        #     print('The corresponding test prediction is ', prediction)
 
         return self.accuracy_list[-1], test_accuracy, self.cost_list[-1]
 
@@ -625,12 +629,21 @@ class ConvLayer(object):
         self.inpt = inpt.reshape(self.image_shape)
         conv_out = conv2d(
             input=self.inpt, filters=self.w, filter_shape=self.filter_shape,
-            image_shape=self.image_shape, border_mode=self.border_mode)
+            input_shape=self.image_shape, border_mode=self.border_mode)
         activated_out = self.activation_fn(
             conv_out + self.b.dimshuffle('x', 0, 'x', 'x'))
         self.output = activated_out
+        self.y_out = T.argmax(self.output, axis=1)
 
         self.output_dropout = self.output  # no dropout in the convolutional layers
+
+    def cost(self, net):
+        "Return the log-likelihood cost."
+        return -T.mean(T.log(self.output_dropout)[T.arange(net.y.shape[0]), net.y])
+
+    def accuracy(self, y):
+        "Return the accuracy for the mini-batch."
+        return T.mean(T.eq(y, self.y_out))
 
     def skip_paramterize(self):
         return False
@@ -676,7 +689,7 @@ class PoolLayer(object):
         #pass from conv to pooling
         self.inpt = inpt.reshape(self.image_shape)
         pooled_out = pool_2d(
-            input=inpt, ws=self.poolsize, ignore_border=True)
+            input=self.inpt, ws=self.poolsize, ignore_border=True, mode='average_inc_pad')
         self.output = pooled_out
         self.output_dropout = self.output  # no dropout in the convolutional layers
 
@@ -698,10 +711,10 @@ class FullyConnectedLayer(object):
         self.p_dropout = p_dropout
         # self.crosscost = CrossEntropyCost
         # Initialize weights and biases
-        self.column = int(self.n_in/(9*8))
-        self.row = int(self.n_in/(9*8))
-        print("MLP columns: ", self.column)
-        print("MLP row: ", self.row)
+        self.column = self.n_in
+        self.row = self.n_in
+        if self.n_in * self.n_out <= 64*36:
+            print("MLP space is enough Ok!!")
 
         self.w = theano.shared(
             np.asarray(
@@ -729,6 +742,10 @@ class FullyConnectedLayer(object):
         self.output_dropout = self.activation_fn(
             T.dot(self.inpt_dropout, self.w) + self.b)
         # self.output_dropout = T.nnet.sigmoid(T.dot(self.inpt_dropout, self.w) + self.b)
+
+    def cost(self, net):
+        "Return the log-likelihood cost."
+        return -T.mean(T.log(self.output_dropout)[T.arange(net.y.shape[0]), net.y])
 
     def accuracy(self, y):
         "Return the accuracy for the mini-batch."
