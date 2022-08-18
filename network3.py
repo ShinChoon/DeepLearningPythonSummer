@@ -356,7 +356,6 @@ def repeat_by_column_bias(layers, columns):
 
 #### Load the MNIST
 
-
 def load_data_shared(filename="mnist.pkl.gz"):
     f = gzip.open(filename, 'rb')
     training_data, validation_data, test_data = pickle.load(
@@ -706,7 +705,7 @@ class FullyConnectedLayer(object):
         # Initialize weights and biases
         self.column = self.n_in
         self.row = self.n_in
-        if self.n_in * self.n_out <= 64*36:
+        if self.n_in * self.n_out <= 72*64:
             print("MLP space is enough Ok!!")
 
         self.w = theano.shared(
