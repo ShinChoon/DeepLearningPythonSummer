@@ -713,7 +713,7 @@ class FullyConnectedLayer(object):
         # Initialize weights and biases
         self.column = self.n_in
         self.row = self.n_in
-        if self.n_in * self.n_out <= 64*36:
+        if self.n_in * self.n_out <= 72*32:
             print("MLP space is enough Ok!!")
 
         self.w = theano.shared(
