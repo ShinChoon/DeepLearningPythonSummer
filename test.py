@@ -39,7 +39,7 @@ def testTheano():
 # - network3.py example:
 
 #for test
-accuracy_list = []
+train_accuracylist = []
 test_accuracylist = []
 cost_list = []
 epoch_index = 10
@@ -60,14 +60,14 @@ CHNL5 = 8
 
 pool_scale = 2
 conv_scale = 3
-image_scale = 28
+image_scale = 32
 # image width, image height, filter maps number, input maps number
 i_f_map = ((image_scale, image_scale, CHNL1, CHNLIn),  # same padding
-           (28, 28, CHNL1, CHNL1), # Pool
-           (14, 14, CHNL2, CHNL1), # Full valid
-           (12, 12, CHNL2, CHNL2),  # Pool
-           (6, 6, CHNL5, CHNL4),  # MLP1 
-           (16, 10)  # 7 * 7 * 6
+           (32, 32, CHNL1, CHNL1), # Pool
+           (16, 16, CHNL2, CHNL1), # valid
+           (14, 14, CHNL2, CHNL2),  # Pool
+           (7, 7, CHNL5, CHNL4),  # MLP1 8*9*8????
+           (11, 10)  # 7 * 7 * 6
            )
 
 #Conv1
@@ -152,7 +152,7 @@ def create_and_test():
         SMLayer
     ], mini_batch_size)
 
-    accuracy_trained, accuracy_test, cost = net.SGD(training_data=training_data, epochs=60, mini_batch_size=mini_batch_size,
+    accuracy_trained, accuracy_test, cost = net.SGD(training_data=training_data, epochs=10, mini_batch_size=mini_batch_size,
                                                     eta=0.03, validation_data=validation_data, test_data=test_data, lmbda=0.1)
     return accuracy_trained, accuracy_test, cost
 
@@ -177,15 +177,15 @@ def plot_n(indexlists, valuelists, labellist):
 
 for i in range(epoch_index):
     accuracy_trained, accuracy_test, cost = create_and_test()
-    accuracy_list.append(accuracy_trained)
+    train_accuracylist.append(accuracy_trained)
     test_accuracylist.append(accuracy_test)
     cost_list.append(cost)
-
-    print("FortestConvModel:")
-    print("accuracy_list= ", accuracy_list)
-    print("test_accuracylist= ", test_accuracylist)
-    print("cost_list= ", cost_list)
     print("Now i = ", i)
 
-plot_n([epoch_indexs, epoch_indexs, epoch_indexs], [accuracy_list,
+print("FortestConvModel:")
+print("train_accuracylist= ", ['{:.2%}'.format(i) for i in train_accuracylist])
+print("test_accuracylist= ", ['{:.2%}'.format(i) for i in test_accuracylist])
+print("cost_list= ", cost_list)
+
+plot_n([epoch_indexs, epoch_indexs, epoch_indexs], [train_accuracylist,
        test_accuracylist, cost_list], ["trained accuracy", "test accuracy", "cost in training"])

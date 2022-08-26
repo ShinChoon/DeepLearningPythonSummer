@@ -219,9 +219,9 @@ def save_data_shared(filename, params, columns):
     # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
     # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
-    np.savetxt('params.csv', _param_list_result, fmt='%s', delimiter='')
-    np.savetxt('param_decoded.csv', _decoded_params,
-               fmt='%s', delimiter='')
+    # np.savetxt('params.csv', _param_list_result, fmt='%s', delimiter='')
+    # np.savetxt('param_decoded.csv', _decoded_params,
+            #    fmt='%s', delimiter='')
 
     return decoded_params_output
 
@@ -356,11 +356,26 @@ def repeat_by_column_bias(layers, columns):
 
 #### Load the MNIST
 
+
+def resize_images(data):
+    _result = [[], []]
+    for h in data[0]:
+        _reshaped = np.reshape(h, (28, 28))
+        _padded = np.pad(_reshaped, (2, 2))
+        _result[0].append(_padded.flatten())
+    _result[1] = data[1]
+    return _result
+
 def load_data_shared(filename="mnist.pkl.gz"):
     f = gzip.open(filename, 'rb')
     training_data, validation_data, test_data = pickle.load(
         f, encoding="latin1")
     f.close()
+
+## Update the dataset
+    training_data = resize_images(training_data)
+    validation_data = resize_images(validation_data)
+    test_data = resize_images(test_data)
 
     def shared(data):
         """Place the data into shared variables.  This allows Theano to copy
@@ -497,6 +512,8 @@ class Network(object):
                 cost_ij = train_mb(minibatch_index)
                 cost_list_local = np.append(cost_list_local, cost_ij)
                 if (iteration+1) % num_training_batches == 0:
+                    
+
                     validation_accuracy = np.mean(
                         [validate_mb_accuracy(j) for j in range(num_validation_batches)])
                     print("Epoch {0}: validation accuracy {1:.2%}".format(
@@ -516,12 +533,12 @@ class Network(object):
             self.epoch_index = np.append(self.epoch_index, epoch)
             self.cost_list = np.append(self.cost_list, cost_mean)
             self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
-
+            
             # encode and decode the params
             self.decoded_params = save_data_shared(
                 "params.csv", self.params, self.columns)
-
             self.reset_params()
+
 
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
