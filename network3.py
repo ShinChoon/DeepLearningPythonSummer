@@ -219,9 +219,9 @@ def save_data_shared(filename, params, columns):
     # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
     # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
-    np.savetxt('params.csv', _param_list_result, fmt='%s', delimiter='')
-    np.savetxt('param_decoded.csv', _decoded_params,
-               fmt='%s', delimiter='')
+    # np.savetxt('params.csv', _param_list_result, fmt='%s', delimiter='')
+    # np.savetxt('param_decoded.csv', _decoded_params,
+            #    fmt='%s', delimiter='')
 
     return decoded_params_output
 
@@ -267,7 +267,6 @@ def quantitatize_layer(params):
             _params_result.append(float_result)
 
     return _params_result
-
 
 
 def dequantitatize_layer(params):
@@ -358,11 +357,26 @@ def repeat_by_column_bias(layers, columns):
 #### Load the MNIST
 
 
+def resize_images(data):
+    _result = [[], []]
+    for h in data[0]:
+        _reshaped = np.reshape(h, (28, 28))
+        _padded = np.pad(_reshaped, (2, 2))
+        _result[0].append(_padded.flatten())
+    _result[1] = data[1]
+    return _result
+
+
 def load_data_shared(filename="mnist.pkl.gz"):
     f = gzip.open(filename, 'rb')
     training_data, validation_data, test_data = pickle.load(
         f, encoding="latin1")
     f.close()
+
+## Update the dataset
+    training_data = resize_images(training_data)
+    validation_data = resize_images(validation_data)
+    test_data = resize_images(test_data)
 
     def shared(data):
         """Place the data into shared variables.  This allows Theano to copy
@@ -407,7 +421,7 @@ class Network(object):
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
-        for layer in self.layers[:-3]: #skip softmax and MLP
+        for layer in self.layers[:-3]:  # skip softmax and MLP
             if not layer.skip_paramterize():
                 self.columns.append(layer.column)
                 self.rows.append(layer.row)
@@ -499,6 +513,7 @@ class Network(object):
                 cost_ij = train_mb(minibatch_index)
                 cost_list_local = np.append(cost_list_local, cost_ij)
                 if (iteration+1) % num_training_batches == 0:
+
                     validation_accuracy = np.mean(
                         [validate_mb_accuracy(j) for j in range(num_validation_batches)])
                     print("Epoch {0}: validation accuracy {1:.2%}".format(
@@ -509,7 +524,6 @@ class Network(object):
                         best_iteration = iteration
                     accuracy_list_local = np.append(
                         accuracy_list_local, validation_accuracy)
-                        
 
             cost_mean = np.mean(cost_list_local[1:])
             accuracy_mean = np.mean(accuracy_list_local[1:])
@@ -520,11 +534,9 @@ class Network(object):
             self.cost_list = np.append(self.cost_list, cost_mean)
             self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
 
-
             # encode and decode the params
             self.decoded_params = save_data_shared(
                 "params.csv", self.params, self.columns)
-
             self.reset_params()
 
         print("Finished training network.")
@@ -534,14 +546,12 @@ class Network(object):
         print("self.columns:", self.columns)
         print("self.rows:", self.rows)
 
-        
         if test_data:
             test_accuracy = np.mean(
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
             print('corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
 
-        
         print("self.accuracy_list: ", self.accuracy_list)
 
         # test_predictions = [self.test_mb_predictions(j) for j in range(num_test_batches)]
@@ -549,7 +559,6 @@ class Network(object):
         #     print('The corresponding test prediction is ', prediction)
 
         return self.accuracy_list[-1], test_accuracy, self.cost_list[-1]
-
 
     def reset_params(self):
         decode_index = -1
@@ -568,7 +577,6 @@ class Network(object):
                         self.layers[int((index-1)/2)].b.get_value())
                     self.layers[int((index-1)/2)
                                 ].b.set_value(self.decoded_params[decode_index])
-
 
 
 class ConvLayer(object):
@@ -713,7 +721,7 @@ class FullyConnectedLayer(object):
         # Initialize weights and biases
         self.column = self.n_in
         self.row = self.n_in
-        if self.n_in * self.n_out <= 72*32:
+        if self.n_in * self.n_out <= 72*64:
             print("MLP space is enough Ok!!")
 
         self.w = theano.shared(
@@ -723,12 +731,10 @@ class FullyConnectedLayer(object):
                 dtype=theano.config.floatX),
             name='w', borrow=True)
 
-
         self.b = theano.shared(
             np.asarray(np.random.normal(loc=0.0, scale=1.0, size=(n_out,)),
                        dtype=theano.config.floatX),
             name='b', borrow=True)
-
 
         self.params = [self.w, self.b]
 
