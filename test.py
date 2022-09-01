@@ -159,19 +159,20 @@ def create_and_test():
 
 def plot_n(indexlists, valuelists, labellist):
     if len(indexlists) == len(valuelists) == len(labellist):
-        fig, (ax1, ax2, ax3) = plt.subplots(len(indexlists), 1)
-        ax1.plot(indexlists[0], valuelists[0], "-.",
-                 label=labellist[0])  # Plot the chart
-        ax1.set_title(label=labellist[0])
-        ax1.label_outer()
-        ax2.plot(indexlists[1], valuelists[1], "-.",
-                 label=labellist[1])  # Plot the chart
-        ax2.set_title(label=labellist[1])
-        ax2.label_outer()
-        ax3.plot(indexlists[2], valuelists[2], "-.",
-                 label=labellist[2])  # Plot the chart
-        ax3.set_title(label=labellist[2])
-        ax3.label_outer()
+        fig, axes = plt.subplots(len(indexlists), 1)
+        for ind in range(len(axes)):
+            axes[ind].plot(indexlists[ind], valuelists[ind], "-.",
+                           label=labellist[ind])  # Plot the chart
+            axes[ind].set_title(label=labellist[ind])
+            axes[ind].label_outer()
+
+            if ind < len(axes)-1:
+                for i, j in zip(indexlists[ind], valuelists[ind]):
+                    axes[ind].annotate('{:.2%}'.format(j), xy=(i, j))
+            else:
+                for i, j in zip(indexlists[ind], valuelists[ind]):
+                    axes[ind].annotate('{:.3}'.format(j), xy=(i, j))
+
         plt.show()  # display
 
 
