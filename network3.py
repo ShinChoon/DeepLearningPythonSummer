@@ -25,47 +25,52 @@ from theano.tensor.signal.pool import pool_2d
 # Activation functions for neurons
 def linear(z): return z
 def ReLU(z): return T.maximum(0.0, z)
+def _sigmoid(z): 1 / (1 + T.exp(-z))
+
+def nan_num(z): 
+    z = T.switch(T.isnan(z), 0., z)
+    return z
 
 
-class QuadraticCost(object):
+# class QuadraticCost(object):
 
-    @staticmethod
-    def fn(a, y):
-        """Return the cost associated with an output ``a`` and desired output
-        ``y``.
+#     @staticmethod
+#     def fn(a, y):
+#         """Return the cost associated with an output ``a`` and desired output
+#         ``y``.
 
-        """
-        return 0.5*np.linalg.norm(a-y)**2
+#         """
+#         return 0.5*np.linalg.norm(a-y)**2
 
-    @staticmethod
-    def delta(z, a, y):
-        """Return the error delta from the output layer."""
-        return (a-y) * sigmoid_prime(z)
+#     @staticmethod
+#     def delta(z, a, y):
+#         """Return the error delta from the output layer."""
+#         return (a-y) * sigmoid_prime(z)
 
 
-class CrossEntropyCost(object):
+# class CrossEntropyCost(object):
 
-    @staticmethod
-    def fn(a, y):
-        """Return the cost associated with an output ``a`` and desired output
-        ``y``.  Note that np.nan_to_num is used to ensure numerical
-        stability.  In particular, if both ``a`` and ``y`` have a 1.0
-        in the same slot, then the expression (1-y)*np.log(1-a)
-        returns nan.  The np.nan_to_num ensures that that is converted
-        to the correct value (0.0).
+#     @staticmethod
+#     def fn(a, y):
+#         """Return the cost associated with an output ``a`` and desired output
+#         ``y``.  Note that np.nan_to_num is used to ensure numerical
+#         stability.  In particular, if both ``a`` and ``y`` have a 1.0
+#         in the same slot, then the expression (1-y)*np.log(1-a)
+#         returns nan.  The np.nan_to_num ensures that that is converted
+#         to the correct value (0.0).
 
-        """
-        return -np.sum(np.nan_to_num(-y*np.log(a)-(1-y)*np.log(1-a)))
+#         """
+#         return -np.sum(np.nan_to_num(-y*np.log(a)-(1-y)*np.log(1-a)))
 
-    @staticmethod
-    def delta(z, a, y):
-        """Return the error delta from the output layer.  Note that the
-        parameter ``z`` is not used by the method.  It is included in
-        the method's parameters in order to make the interface
-        consistent with the delta method for other cost classes.
+#     @staticmethod
+#     def delta(z, a, y):
+#         """Return the error delta from the output layer.  Note that the
+#         parameter ``z`` is not used by the method.  It is included in
+#         the method's parameters in order to make the interface
+#         consistent with the delta method for other cost classes.
 
-        """
-        return (a-y)
+#         """
+#         return (a-y)
 
 
 #### Constants
@@ -219,9 +224,9 @@ def save_data_shared(filename, params, columns):
     # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
     # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
-    # np.savetxt('params.csv', _param_list_result, fmt='%s', delimiter='')
-    # np.savetxt('param_decoded.csv', _decoded_params,
-            #    fmt='%s', delimiter='')
+    np.savetxt('params.csv', _param_list_result, fmt='%s', delimiter='')
+    np.savetxt('param_decoded.csv', _decoded_params,
+               fmt='%s', delimiter='')
 
     return decoded_params_output
 
@@ -361,7 +366,7 @@ def resize_images(data):
     _result = [[], []]
     for h in data[0]:
         _reshaped = np.reshape(h, (28, 28))
-        _padded = np.pad(_reshaped, (2, 2))
+        _padded = np.pad(_reshaped, (0, 0)) # to 30, 30 
         _result[0].append(_padded.flatten())
     _result[1] = data[1]
     return _result
@@ -420,10 +425,10 @@ class Network(object):
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
-        for layer in self.layers[:-3]:  # skip softmax and MLP
-            if not layer.skip_paramterize():
-                self.columns.append(layer.column)
-                self.rows.append(layer.row)
+        # for layer in self.layers:  # skip softmax and MLP
+        #     if not layer.skip_paramterize():
+        #         self.columns.append(layer.column)
+        #         self.rows.append(layer.row)
         self.x = T.matrix("x")
         self.y = T.ivector("y")
         init_layer = self.layers[0]
@@ -463,6 +468,7 @@ class Network(object):
         updates = [(param, param-eta*grad)
                    for param, grad in zip(self.params, grads)]
 
+
         # define functions to train a mini-batch, and to compute the
         # accuracy in validation and test mini-batches.
         i = T.lscalar()  # mini-batch index
@@ -484,21 +490,7 @@ class Network(object):
                 validation_y[i *
                              self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
-        test_mb_accuracy = theano.function(
-            [i], self.layers[-1].accuracy(self.y),
-            givens={
-                self.x:
-                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
-                self.y:
-                test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
-            })
 
-        self.test_mb_predictions = theano.function(
-            [i], self.layers[-1].y_out,
-            givens={
-                self.x:
-                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
-            })
         # Do the actual training
         best_validation_accuracy = 0.0
         best_iteration = 0
@@ -537,15 +529,39 @@ class Network(object):
             # encode and decode the params
             self.decoded_params = save_data_shared(
                 "params.csv", self.params, self.columns)
-            self.reset_params()
+            self.reset_params(scan_range=len(self.params)+4)
 
 
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
         # print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
-        print("self.columns:", self.columns)
-        print("self.rows:", self.rows)
+
+        # test_accuracy = self.test_network(test_data, num_test_batches)
+
+        print("self.accuracy_list: ", self.accuracy_list)
+
+        return self.accuracy_list[-1], self.cost_list[-1], self.decoded_params
+
+    def test_network(self, test_data, mini_batch_size):
+        i = T.lscalar()  # mini-batch index
+        test_x, test_y = test_data
+        num_test_batches = int(size(test_data)/mini_batch_size)
+        test_mb_accuracy = theano.function(
+            [i], self.layers[-1].accuracy(self.y),
+            givens={
+                self.x:
+                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+                self.y:
+                test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+            })
+
+        test_mb_predictions = theano.function(
+            [i], self.layers[-1].y_out,
+            givens={
+                self.x:
+                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+            })
 
         if test_data:
             test_accuracy = np.mean(
@@ -553,23 +569,29 @@ class Network(object):
             print('corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
 
-        print("self.accuracy_list: ", self.accuracy_list)
+        test_predictions = [test_mb_predictions(
+            j) for j in range(num_test_batches)]
 
-        # test_predictions = [self.test_mb_predictions(j) for j in range(num_test_batches)]
         # for prediction in test_predictions:
-        #     print('The corresponding test prediction is ', prediction)
+            # print('The corresponding test prediction is ', prediction)
+        return test_accuracy
 
-        return self.accuracy_list[-1], test_accuracy, self.cost_list[-1]
-
-    def reset_params(self):
+    def reset_params(self, _params=None, scan_range=0):
+        # reset params w,b based on local/external params
+        if _params is None:
+            _params = self.decoded_params
         decode_index = -1
-        for index in range(len(self.decoded_params)):
+        for index in range(scan_range):
+            # print("index: ", index)
             if index % 2 == 0:
                 if not self.layers[int(index/2)].skip_paramterize():
                     decode_index = decode_index + 1
                     array_w = np.array(self.layers[int(index/2)].w.get_value())
                     self.layers[int(
-                        index/2)].w.set_value(self.decoded_params[decode_index])
+                        index/2)].w.set_value(_params[decode_index])
+
+                    print(self.layers[int((index)/2)])
+                    # print(int((index)/2))
 
             else:
                 if not self.layers[int((index-1)/2)].skip_paramterize():
@@ -577,7 +599,11 @@ class Network(object):
                     array_b = np.array(
                         self.layers[int((index-1)/2)].b.get_value())
                     self.layers[int((index-1)/2)
-                                ].b.set_value(self.decoded_params[decode_index])
+                                ].b.set_value(_params[decode_index])
+                    
+                    print(self.layers[int((index-1)/2)])
+                    # print(int((index-1)/2))
+
 
 
 class ConvLayer(object):
@@ -610,8 +636,8 @@ class ConvLayer(object):
 
         self.column = self.image_shape[1]*self.image_shape[2]/4
         self.row = self.filter_shape[0]
-        print("Conv columns: ", self.column)
-        print("Conv row: ", self.row)
+        # print("Conv columns: ", self.column)
+        # print("Conv row: ", self.row)
         # initialize weights and biases
         n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
         n_in = (image_shape[1]*np.prod(image_shape[2:]))
@@ -633,6 +659,9 @@ class ConvLayer(object):
         # self.b = normal_initalization('b', (filter_shape[0],))
 
         self.params = [self.w, self.b]
+
+    def __str__(self):
+        return f'ConvLayer(Object)'
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape(self.image_shape)
@@ -694,11 +723,14 @@ class PoolLayer(object):
         self.b = self.params[1]
         self.column = self.filter_shape[1]*self.image_shape[2]/4
 
+    def __str__(self):
+        return f'Pool(Object)'
+
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         #pass from conv to pooling
         self.inpt = inpt.reshape(self.image_shape)
         pooled_out = pool_2d(
-            input=self.inpt, ws=self.poolsize, ignore_border=True, mode='average_inc_pad')
+            input=self.inpt, ws=self.poolsize, ignore_border=True, mode='max')
         self.output = pooled_out
         self.output_dropout = self.output  # no dropout in the convolutional layers
 
@@ -714,30 +746,26 @@ class PoolLayer(object):
 class FullyConnectedLayer(object):
 
     def __init__(self, n_in, n_out, activation_fn=sigmoid, p_dropout=0.0):
-        self.n_in = n_in[0]*n_in[1]*n_in[2]
+        self.n_in = n_in
         self.n_out = n_out
-        self.activation_fn = activation_fn
         self.p_dropout = p_dropout
-        # self.crosscost = CrossEntropyCost
-        # Initialize weights and biases
+        self.activation_fn = activation_fn
         self.column = self.n_in
         self.row = self.n_in
-        if self.n_in * self.n_out <= 72*64:
-            print("MLP space is enough Ok!!")
-
         self.w = theano.shared(
             np.asarray(
                 np.random.normal(
                     loc=0.0, scale=np.sqrt(1.0/n_out), size=(self.n_in, n_out)),
                 dtype=theano.config.floatX),
             name='w', borrow=True)
-
         self.b = theano.shared(
             np.asarray(np.random.normal(loc=0.0, scale=1.0, size=(n_out,)),
                        dtype=theano.config.floatX),
             name='b', borrow=True)
-
         self.params = [self.w, self.b]
+
+    def __str__(self):
+        return f'FullyConnectedLayer(Object)'
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
@@ -748,11 +776,10 @@ class FullyConnectedLayer(object):
             inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
         self.output_dropout = self.activation_fn(
             T.dot(self.inpt_dropout, self.w) + self.b)
-        # self.output_dropout = T.nnet.sigmoid(T.dot(self.inpt_dropout, self.w) + self.b)
 
     def cost(self, net):
-        "Return the log-likelihood cost."
-        return -T.mean(T.log(self.output_dropout)[T.arange(net.y.shape[0]), net.y])
+        # # MSE
+        return T.sqr(self.output_dropout-net.y).mean()
 
     def accuracy(self, y):
         "Return the accuracy for the mini-batch."
@@ -783,6 +810,9 @@ class SoftmaxLayer(object):
             name='b', borrow=True)
         self.params = [self.w, self.b]
 
+    def __str__(self):
+        return f'SofmaxLayer(Object)'
+
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = softmax((1-self.p_dropout) *
@@ -795,7 +825,8 @@ class SoftmaxLayer(object):
 
     def cost(self, net):
         "Return the log-likelihood cost."
-        return -T.mean(T.log(self.output_dropout)[T.arange(net.y.shape[0]), net.y])
+        # return -T.mean(T.log(self.output_dropout)[T.arange(net.y.shape[0]), net.y])
+        return T.mean(T.nnet.categorical_crossentropy(self.output_dropout, net.y))
 
     def accuracy(self, y):
         "Return the accuracy for the mini-batch."
@@ -810,6 +841,56 @@ class SoftmaxLayer(object):
         return weight_array.shape, bias_array.shape
 #### Miscellanea
 
+
+class Output_FC(object):
+
+    def __init__(self, n_in, n_out, activation_fn=sigmoid, p_dropout=0.0):
+        self.n_in = n_in
+        self.n_out = n_out
+        self.p_dropout = p_dropout
+        self.activation_fn = activation_fn
+
+        self.w = theano.shared(
+            np.asarray(
+                np.random.normal(
+                    loc=0.0, scale=np.sqrt(1.0/n_out), size=(self.n_in, n_out)),
+                dtype=theano.config.floatX),
+            name='w', borrow=True)
+        self.b = theano.shared(
+            np.asarray(np.random.normal(loc=0.0, scale=1.0, size=(n_out,)),
+                       dtype=theano.config.floatX),
+            name='b', borrow=True)
+        self.params = [self.w, self.b]
+
+    def __str__(self) -> str:
+        return f'Output_FC(Object)'
+
+    def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
+        self.inpt = inpt.reshape((mini_batch_size, self.n_in))
+        self.output = self.activation_fn((1-self.p_dropout) *
+                              T.dot(self.inpt, self.w) + self.b)
+        self.y_out = T.argmax(self.output, axis=1)
+        self.inpt_dropout = dropout_layer(
+            inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
+        self.output_dropout = self.activation_fn(
+            T.dot(self.inpt_dropout, self.w) + self.b)
+
+    def cost(self, net):
+        # return T.mean(T.nnet.categorical_crossentropy(self.output_dropout, net.y))
+        return T.sqr(self.output_dropout-net.y).mean()
+
+    def accuracy(self, y):
+        "Return the accuracy for the mini-batch."
+        return T.mean(T.eq(y, self.y_out))
+
+    def skip_paramterize(self):
+        return False
+
+    def dimension_show(self):
+        weight_array = np.array(self.w)
+        bias_array = np.array(self.b)
+        return weight_array.shape, bias_array.shape
+#### Miscellanea
 
 def size(data):
     "Return the size of the dataset `data`."
