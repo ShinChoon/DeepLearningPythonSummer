@@ -15,7 +15,7 @@ import network3
 train_accuracylist = []
 test_accuracylist = []
 cost_list = []
-epoch_index = 5
+epoch_index = 10
 epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
 
 # read data:
@@ -27,6 +27,7 @@ mini_batch_size = 10
 CHNLIn = 1
 CHNL1 = 2  # change to 2 to keep columns in constraints
 CHNL2 = 4
+CHNL3 = 8
 
 
 pool_scale = 2
@@ -37,7 +38,8 @@ i_f_map = ((image_scale, image_scale, CHNL1, CHNLIn),  # same padding
            (28, 28, CHNL1, CHNL1),  # Pool
            (14, 14, CHNL2, CHNL1),  # valid
            (12, 12, CHNL2, CHNL2),  # Pool
-           (144, 32), #MLP 6*6*8*32
+           (6, 6, CHNL3, CHNL2),    #Convol
+           (288, 32), #MLP 6*6*8*32
            (32, 10) #SoftMax # replaced by output_fc in test
            )
 
@@ -59,6 +61,11 @@ filter_shape3 = (i_f_map[2][2], i_f_map[2][3], conv_scale, conv_scale)
 #Pool2
 image_shape4 = (mini_batch_size, i_f_map[2][2], i_f_map[3][0], i_f_map[3][1])
 filter_shape4 = (i_f_map[3][2], i_f_map[3][3], conv_scale, conv_scale)
+
+#Conv3
+
+image_shape5 = (mini_batch_size, i_f_map[3][3], i_f_map[4][0], i_f_map[4][1])
+filter_shape5 = (i_f_map[4][2], i_f_map[4][3], conv_scale, conv_scale)
 
 def create_and_test():
 
@@ -82,30 +89,35 @@ def create_and_test():
                       poolsize=(pool_scale, pool_scale),
                       activation_fn=ReLU, _params=Conv2.params)
 
-    MLP1 = FullyConnectedLayer(n_in=i_f_map[4][0], n_out=i_f_map[4][1],
-                               activation_fn=network3.T.tanh, p_dropout=0.5)
+    Conv3 = ConvLayer(image_shape=image_shape5,
+                      filter_shape=filter_shape5,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU, border_mode='half')
 
+
+    MLP1 = FullyConnectedLayer(n_in=i_f_map[5][0], n_out=i_f_map[5][1],
+                               activation_fn=ReLU, p_dropout=0.5)
+
+
+    MLP2 = FullyConnectedLayer(n_in=i_f_map[6][0], 
+                           n_out=i_f_map[6][1], activation_fn=ReLU, p_dropout=0.5)
                                
-    SMLayer = SoftmaxLayer(n_in=i_f_map[5][0],
-                           n_out=i_f_map[5][1])
+    SMLayer = SoftmaxLayer(n_in=i_f_map[6][0],
+                           n_out=i_f_map[6][1])
 
-    Output_MLP = Output_FC(n_in=i_f_map[5][0],
-                           n_out=i_f_map[5][1], activation_fn=ReLU, p_dropout=0.5)
-
-    MLP2 = FullyConnectedLayer(n_in=i_f_map[5][0], 
-                           n_out=i_f_map[5][1], activation_fn=network3.T.nnet.sigmoid, p_dropout=0.5)
 
     net = Network([
         Conv1,
         Pool1,
         Conv2,
         Pool2,
+        Conv3,
         MLP1,
         SMLayer
     ], mini_batch_size)
 
 
-    accuracy_trained, cost, _params = net.SGD(training_data=training_data, epochs=60, 
+    accuracy_trained, cost, _params = net.SGD(training_data=training_data, epochs=10, 
                                                 mini_batch_size=mini_batch_size, 
                                                 eta=0.03, validation_data=validation_data, 
                                                 test_data=test_data, lmbda=0.1)
@@ -118,6 +130,7 @@ def create_and_test():
         Pool1,
         Conv2,
         Pool2,
+        Conv3,
         MLP1,
         MLP2  # FC
     ], mini_batch_size)
@@ -144,7 +157,7 @@ def plot_n(indexlists, valuelists, labellist):
                 for i, j in zip(indexlists[ind], valuelists[ind]):
                     axes[ind].annotate('{:.3}'.format(j), xy=(i, j))
 
-        fig.savefig("result_2_Convs_quick.png")
+        fig.savefig("result_2_4_8.png")
         plt.show()  # display
 
 

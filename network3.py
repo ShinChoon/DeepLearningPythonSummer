@@ -634,10 +634,14 @@ class ConvLayer(object):
         self.activation_fn = activation_fn
         self.border_mode = border_mode
 
-        self.column = self.image_shape[1]*self.image_shape[2]/4
-        self.row = self.filter_shape[0]
-        # print("Conv columns: ", self.column)
-        # print("Conv row: ", self.row)
+        self.column = self.filter_shape[0]
+        self.row = self.image_shape[1]
+        self.occupation = self.column * self.row * \
+            filter_shape[2] * filter_shape[3]/(36*32)
+
+        print("Conv rows: ", self.row)
+        print("Conv columns: ", self.column)
+        print("Conv occupy: {:.2%}".format(self.occupation))
         # initialize weights and biases
         n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
         n_in = (image_shape[1]*np.prod(image_shape[2:]))
@@ -672,7 +676,6 @@ class ConvLayer(object):
             conv_out + self.b.dimshuffle('x', 0, 'x', 'x'))
         self.output = activated_out
         self.y_out = T.argmax(self.output, axis=1)
-
         self.output_dropout = self.output  # no dropout in the convolutional layers
 
     def cost(self, net):
@@ -721,7 +724,8 @@ class PoolLayer(object):
         self.params = _params
         self.w = self.params[0]
         self.b = self.params[1]
-        self.column = self.filter_shape[1]*self.image_shape[2]/4
+        print("recycle times in Conv: {0} x {0} = {1}".format(
+            self.image_shape[2],self.image_shape[2] *self.image_shape[3]))
 
     def __str__(self):
         return f'Pool(Object)'
@@ -750,8 +754,8 @@ class FullyConnectedLayer(object):
         self.n_out = n_out
         self.p_dropout = p_dropout
         self.activation_fn = activation_fn
-        self.column = self.n_in
-        self.row = self.n_in
+        self.occupation = self.n_in * self.n_out /(36*32)
+        print("Full occupy: {:.2%}".format(self.occupation))
         self.w = theano.shared(
             np.asarray(
                 np.random.normal(
