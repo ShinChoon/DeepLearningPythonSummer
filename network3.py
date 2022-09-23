@@ -425,10 +425,11 @@ class Network(object):
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
-        # for layer in self.layers:  # skip softmax and MLP
-        #     if not layer.skip_paramterize():
-        #         self.columns.append(layer.column)
-        #         self.rows.append(layer.row)
+
+        self.occupation_list = []
+        for layer in self.layers:  # skip softmax and MLP
+            if not layer.skip_paramterize():
+                self.occupation_list.append(layer.occupation)
         self.x = T.matrix("x")
         self.y = T.ivector("y")
         init_layer = self.layers[0]
@@ -813,6 +814,8 @@ class SoftmaxLayer(object):
             np.zeros((n_out,), dtype=theano.config.floatX),
             name='b', borrow=True)
         self.params = [self.w, self.b]
+        self.occupation = self.n_in * self.n_out /(36*32)
+
 
     def __str__(self):
         return f'SofmaxLayer(Object)'
