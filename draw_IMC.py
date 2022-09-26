@@ -10,6 +10,12 @@ plt.rcdefaults()
 
 class Draw_IMC(object):
     def __init__(self, total_channels=[], input_sizes=[], MLP_ports=[]):
+        """
+        Create a weigh mapping of convolution
+        params tota_channels: array of Conv channels in sequence
+        params input_sizes: scale of input image
+        params MLP_ports: array of connection ports in Fully connected layer
+        """
         self.NumDots = 4
         self.NumConvMax = 8
         self.NumFcMax = 20
