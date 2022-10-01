@@ -44,17 +44,17 @@ def resize_images(data):
 
 _new_set = resize_images(test_data)
 
-plt.figure(1)
-plt.title('Inital image: {}'.format(test_data[1][32]))
-plt.imshow(np.reshape(test_data[0][32],(28,28)), cmap='gray')
 
-plt.figure(2)
-plt.title('After padding: {}'.format(_new_set[1][32]))
-plt.imshow(np.reshape(_new_set[0][32],(32,32)), cmap='gray')
-plt.show()
+def plot_image(index, data=[], image_shape=(30,30), name=''):
+    plt.figure(index)
+    plt.title('{}: {}'.format(name, data[1][0]))
+    plt.imshow(np.reshape(data[0][0], image_shape), cmap='gray')
+    plt.show()
 
 
+plot_image(1, test_data, image_shape=(28,28), name="Initial image")
 
+plot_image(2, _new_set, image_shape=(32, 32), name="After padding")
 
 
 

@@ -5,72 +5,24 @@
 #### Libraries
 # Standard library
 from theano.tensor.nnet import sigmoid
-from theano.tensor import tanh
 import pickle
 import gzip
-
 # Third-party libraries
 import numpy as np
 import theano
 import theano.tensor as T
-from theano import printing
-from theano.tensor.nnet import conv
 from theano.tensor.nnet import conv2d
 from theano.tensor.nnet import softmax
-import tensorflow as tf
 from theano.tensor import shared_randomstreams
 from theano.tensor.signal.pool import pool_2d
-
 
 # Activation functions for neurons
 def linear(z): return z
 def ReLU(z): return T.maximum(0.0, z)
-def _sigmoid(z): 1 / (1 + T.exp(-z))
 
 def nan_num(z): 
     z = T.switch(T.isnan(z), 0., z)
     return z
-
-
-# class QuadraticCost(object):
-
-#     @staticmethod
-#     def fn(a, y):
-#         """Return the cost associated with an output ``a`` and desired output
-#         ``y``.
-
-#         """
-#         return 0.5*np.linalg.norm(a-y)**2
-
-#     @staticmethod
-#     def delta(z, a, y):
-#         """Return the error delta from the output layer."""
-#         return (a-y) * sigmoid_prime(z)
-
-
-# class CrossEntropyCost(object):
-
-#     @staticmethod
-#     def fn(a, y):
-#         """Return the cost associated with an output ``a`` and desired output
-#         ``y``.  Note that np.nan_to_num is used to ensure numerical
-#         stability.  In particular, if both ``a`` and ``y`` have a 1.0
-#         in the same slot, then the expression (1-y)*np.log(1-a)
-#         returns nan.  The np.nan_to_num ensures that that is converted
-#         to the correct value (0.0).
-
-#         """
-#         return -np.sum(np.nan_to_num(-y*np.log(a)-(1-y)*np.log(1-a)))
-
-#     @staticmethod
-#     def delta(z, a, y):
-#         """Return the error delta from the output layer.  Note that the
-#         parameter ``z`` is not used by the method.  It is included in
-#         the method's parameters in order to make the interface
-#         consistent with the delta method for other cost classes.
-
-#         """
-#         return (a-y)
 
 
 #### Constants
@@ -399,7 +351,7 @@ def load_data_shared(filename="mnist.pkl.gz"):
 
 class Network(object):
 
-    def __init__(self, layers, mini_batch_size):
+    def __init__(self, plt, plt_enable, layers, mini_batch_size):
         """Takes a list of `layers`, describing the network architecture, and
         a value for the `mini_batch_size` to be used during training
         by stochastic gradient descent.
@@ -407,6 +359,7 @@ class Network(object):
         """
         self.layers = layers
         self.mini_batch_size = mini_batch_size
+        self.plt = plt
 
         self.epoch_index = np.array([0])
         self.cost_list = np.array([0])
@@ -423,6 +376,7 @@ class Network(object):
         self.rows = []
         for layer in self.layers:
             if not layer.skip_paramterize():
+                layer.plt_enable = plt_enable
                 for param in layer.params:
                     self.params.append(param)
 
@@ -441,6 +395,15 @@ class Network(object):
                 prev_layer.output, prev_layer.output_dropout, self.mini_batch_size)
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
+
+
+    def plot_image(self, index, data=[], name=''):
+        if self.plt_enable:
+            self.plt.figure(index)
+            self.plt.title('{}'.format(name))
+            self.plt.imshow(np.reshape(data, (self.image_shape[2], self.image_shape[3])), cmap='gray')
+            self.plt.show()
+
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
             validation_data, test_data, lmbda=0.0):
@@ -526,7 +489,7 @@ class Network(object):
             self.epoch_index = np.append(self.epoch_index, epoch)
             self.cost_list = np.append(self.cost_list, cost_mean)
             self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
-            
+
             # encode and decode the params
             self.decoded_params = save_data_shared(
                 "params.csv", self.params, self.columns)
@@ -544,6 +507,7 @@ class Network(object):
 
         return self.accuracy_list[-1], self.cost_list[-1], self.decoded_params
 
+### suggest to create an individual network2 class definition
     def test_network(self, test_data, mini_batch_size):
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
@@ -552,23 +516,34 @@ class Network(object):
             [i], self.layers[-1].accuracy(self.y),
             givens={
                 self.x:
-                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+                    test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
                 self.y:
-                test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+                    test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
 
         test_mb_predictions = theano.function(
             [i], self.layers[-1].y_out,
             givens={
                 self.x:
-                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+                    test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
+
+        vis_layer1 = theano.function(
+            [i], [self.layers[1].output],
+            givens={
+                self.x:
+                    test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+            })
+
+        print("data: ", vis_layer1(0)[0][0])
+            
 
         if test_data:
             test_accuracy = np.mean(
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
             print('corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
+                
 
         test_predictions = [test_mb_predictions(
             j) for j in range(num_test_batches)]
@@ -615,7 +590,7 @@ class ConvLayer(object):
 
     """
 
-    def __init__(self, filter_shape, image_shape, poolsize=(2, 2),
+    def __init__(self, plt, plt_enable, filter_shape, image_shape, poolsize=(2, 2),
                  activation_fn=sigmoid, border_mode='valid'):
         """`filter_shape` is a tuple of length 4, whose entries are the number
         of filters, the number of input feature maps, the filter height, and the
@@ -634,6 +609,9 @@ class ConvLayer(object):
         self.poolsize = poolsize
         self.activation_fn = activation_fn
         self.border_mode = border_mode
+
+        self.plt = plt
+        self.plt_enable = plt_enable
 
         self.column = self.filter_shape[0]
         self.row = self.image_shape[1]
@@ -667,6 +645,14 @@ class ConvLayer(object):
 
     def __str__(self):
         return f'ConvLayer(Object)'
+
+
+    def plot_image(self, index, data=[], name=''):
+        if self.plt_enable:
+            self.plt.figure(index)
+            self.plt.title('{}'.format(name))
+            self.plt.imshow(np.reshape(data, (self.image_shape[2], self.image_shape[3])), cmap='gray')
+            self.plt.show()
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape(self.image_shape)
@@ -746,16 +732,25 @@ class PoolLayer(object):
         weight_array = np.array(self.w)
         bias_array = np.array(self.b)
         return weight_array.shape, bias_array.shape
+    
+    def get_output(self):
+        return self.output.get_value()
 
 
 class FullyConnectedLayer(object):
 
-    def __init__(self, n_in, n_out, activation_fn=sigmoid, p_dropout=0.0):
-        self.n_in = n_in
+    def __init__(self, plt, plt_enable, image_shape, n_out, activation_fn=sigmoid, p_dropout=0.0):
+        self.image_shape = image_shape
+        self.n_in = image_shape[1]*image_shape[2]*image_shape[3]
         self.n_out = n_out
         self.p_dropout = p_dropout
         self.activation_fn = activation_fn
-        self.occupation = self.n_in * self.n_out /(36*32)
+
+        self.plt = plt
+        self.plt_enable = plt_enable
+
+        print("n_in: {}, n_out:{}".format(self.n_in, self.n_out))
+        self.occupation = self.n_in * self.n_out / (36*32)
         print("Full occupy: {:.2%}".format(self.occupation))
         self.w = theano.shared(
             np.asarray(
@@ -771,6 +766,14 @@ class FullyConnectedLayer(object):
 
     def __str__(self):
         return f'FullyConnectedLayer(Object)'
+
+    def plot_image(self, index, data=[], name=''):
+        if self.plt_enable:
+            self.plt.figure(index)
+            self.plt.title('{}'.format(name))
+            self.plt.imshow(np.reshape(
+                data, (self.n_in, self.n_out)), cmap='gray')
+            self.plt.show()
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
@@ -801,14 +804,15 @@ class FullyConnectedLayer(object):
 
 class SoftmaxLayer(object):
 
-    def __init__(self, n_in, n_out, p_dropout=0.0):
-        self.n_in = n_in
+    def __init__(self, plt, plt_enable, image_shape, n_out, p_dropout=0.0):
+        self.image_shape = image_shape
+        self.n_in = image_shape[1]*image_shape[2]*image_shape[3]        
         self.n_out = n_out
         self.p_dropout = p_dropout
         # Initialize weights and biases
         # ???? all zero
         self.w = theano.shared(
-            np.zeros((n_in, n_out), dtype=theano.config.floatX),
+            np.zeros((self.n_in, n_out), dtype=theano.config.floatX),
             name='w', borrow=True)
         self.b = theano.shared(
             np.zeros((n_out,), dtype=theano.config.floatX),
@@ -819,6 +823,14 @@ class SoftmaxLayer(object):
 
     def __str__(self):
         return f'SofmaxLayer(Object)'
+
+    def plot_image(self, index, data=[], name=''):
+        if self.plt_enable:
+            self.plt.figure(index)
+            self.plt.title('{}'.format(name))
+            self.plt.imshow(np.reshape(
+                data, (self.n_in, self.n_out)), cmap='gray')
+            self.plt.show()
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
@@ -846,57 +858,7 @@ class SoftmaxLayer(object):
         weight_array = np.array(self.w)
         bias_array = np.array(self.b)
         return weight_array.shape, bias_array.shape
-#### Miscellanea
-
-
-class Output_FC(object):
-
-    def __init__(self, n_in, n_out, activation_fn=sigmoid, p_dropout=0.0):
-        self.n_in = n_in
-        self.n_out = n_out
-        self.p_dropout = p_dropout
-        self.activation_fn = activation_fn
-
-        self.w = theano.shared(
-            np.asarray(
-                np.random.normal(
-                    loc=0.0, scale=np.sqrt(1.0/n_out), size=(self.n_in, n_out)),
-                dtype=theano.config.floatX),
-            name='w', borrow=True)
-        self.b = theano.shared(
-            np.asarray(np.random.normal(loc=0.0, scale=1.0, size=(n_out,)),
-                       dtype=theano.config.floatX),
-            name='b', borrow=True)
-        self.params = [self.w, self.b]
-
-    def __str__(self) -> str:
-        return f'Output_FC(Object)'
-
-    def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
-        self.inpt = inpt.reshape((mini_batch_size, self.n_in))
-        self.output = self.activation_fn((1-self.p_dropout) *
-                              T.dot(self.inpt, self.w) + self.b)
-        self.y_out = T.argmax(self.output, axis=1)
-        self.inpt_dropout = dropout_layer(
-            inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
-        self.output_dropout = self.activation_fn(
-            T.dot(self.inpt_dropout, self.w) + self.b)
-
-    def cost(self, net):
-        # return T.mean(T.nnet.categorical_crossentropy(self.output_dropout, net.y))
-        return T.sqr(self.output_dropout-net.y).mean()
-
-    def accuracy(self, y):
-        "Return the accuracy for the mini-batch."
-        return T.mean(T.eq(y, self.y_out))
-
-    def skip_paramterize(self):
-        return False
-
-    def dimension_show(self):
-        weight_array = np.array(self.w)
-        bias_array = np.array(self.b)
-        return weight_array.shape, bias_array.shape
+        
 #### Miscellanea
 
 def size(data):
