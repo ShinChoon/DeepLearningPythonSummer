@@ -1,8 +1,10 @@
 import numpy as np
 
 
-def bin_float(reciv_str):
+def bin_float(reciv_str, _bits=4):
     #remove decimal
+    _bits -= 1
+    resolution = 1/(2**(_bits))
     digit_location = reciv_str.find('.')
     if digit_location != -1:
         clip_str = reciv_str[(digit_location+1):]
@@ -10,13 +12,11 @@ def bin_float(reciv_str):
         clip_str = reciv_str
     P_flag = False if clip_str[0] == '1' else True
     str_num = clip_str[1:]
-    reverse_num = str_num[::-1]
-    answer = 0.0
+    answer = 0
     factor = 0
-    for i in reverse_num:
-
-        answer = answer + int(i) * 0.0625 * 2**factor
-        factor = factor + 1
+    for i in str_num:
+        factor += 1
+        answer += float(int(i) * (1/(2**factor)))
 
     factor = 0
     if digit_location != -1:
@@ -30,30 +30,24 @@ def bin_float(reciv_str):
     return answer
 
 
-
-def float_bin(number, places):
+def float_bin(number, places=5):
     number = float(number)
     if np.isnan(number):
-        number =  0
-    source = float("{:.4f}".format(number))   
-    N_flag = True if source<=0 else False
+        number = 0
+    source = float("{:.4f}".format(number))
+    N_flag = True if source <= 0 else False
     _number = source if source >= 0 else -1*source
     whole, dec = str(source).split(".")
-
     dec = int(dec)
     whole = int(whole)
-
     dec = _number - int(whole)
-
     res = bin(0).lstrip("0b")
     if whole > 0:
-    #detect if any value more than 1
+        #detect if any value more than 1
         res = bin(whole).lstrip("0b") + "."
     else:
         res = bin(0).lstrip("0b")
-
-    for x in range(int(places-1)):
-        
+    for x in range(places-1):
         answer = (decimal_converter(float(dec))) * 2
         # Convert the decimal part
         # to float 4-digit again
@@ -62,18 +56,15 @@ def float_bin(number, places):
             dec = answer - int(whole)
         else:
             whole, _dec = str(0.0).split(".")
-
         # Keep adding the integer parts
         # receive to the result variable
         res += whole
- 
     result = str(res)
-
     if N_flag:
         result = '1' + result
     else:
         result = '0' + result
-  
+
     return result
 
 def decimal_converter(num):
@@ -81,9 +72,13 @@ def decimal_converter(num):
         num /= 10
     return num
 
+
 n = input("Enter your floating point value : \n") 
 bits = input("Enter your bits : \n")
 # Take user input for the number of
 # decimal places user want result as
  
-print(float_bin(n,bits))
+bits = int(bits)
+result = float_bin(n,bits)
+print("result:", result)
+print(bin_float('0111111111',bits))

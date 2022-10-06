@@ -40,8 +40,10 @@ else:
           "network3.py to set\nthe GPU flag to True.")
 
 
-def bin_float(reciv_str):
+def bin_float(reciv_str, _bits=5):
     #remove decimal
+    _bits -= 1
+    resolution = 1/(2**(_bits))
     digit_location = reciv_str.find('.')
     if digit_location != -1:
         clip_str = reciv_str[(digit_location+1):]
@@ -49,13 +51,11 @@ def bin_float(reciv_str):
         clip_str = reciv_str
     P_flag = False if clip_str[0] == '1' else True
     str_num = clip_str[1:]
-    reverse_num = str_num[::-1]
-    answer = 0.0
+    answer = 0
     factor = 0
-    for i in reverse_num:
-
-        answer = answer + int(i) * 0.0625 * 2**factor
-        factor = factor + 1
+    for i in str_num:
+        factor += 1
+        answer += float(int(i) * (1/(2**factor)))
 
     factor = 0
     if digit_location != -1:
@@ -69,7 +69,7 @@ def bin_float(reciv_str):
     return answer
 
 
-def float_bin(number, places=4):
+def float_bin(number, places=5):
     if np.isnan(number):
         number = 0
     source = float("{:.4f}".format(number))
@@ -85,7 +85,7 @@ def float_bin(number, places=4):
         res = bin(whole).lstrip("0b") + "."
     else:
         res = bin(0).lstrip("0b")
-    for x in range(places):
+    for x in range(places-1):
         answer = (decimal_converter(float(dec))) * 2
         # Convert the decimal part
         # to float 4-digit again
@@ -222,7 +222,7 @@ def quantitatize_layer(params):
             _param_q = params[index]/abs_normalize*0.9375
             float_result = float_bin(_param_q)
             _params_result.append(float_result)
-
+    _params_result = np.array(_params_result)
     return _params_result
 
 
@@ -242,7 +242,7 @@ def dequantitatize_layer(params):
                     for index in range(len(C)):
                         # C[index] = float("{:.5f}".format(C[index]))
                         # float_result = float_bin(C[index])
-                        float_result = str(bin_float(C[index]))
+                        float_result = bin_float(C[index])
                         _C_result.append(float_result)
                     _ele_result.append(_C_result)
                 _neuron_result.append(_ele_result)
@@ -255,7 +255,7 @@ def dequantitatize_layer(params):
             for index in range(len(C)):
                 # C[index] = float("{:.5f}".format(C[index]))
                 # float_result = float_bin(C[index])
-                float_result = str(bin_float(C[index]))
+                float_result = bin_float(C[index])
                 _C_result.append(float_result)
             _params_result.append(_C_result)
     else:  # normally for bias
@@ -263,9 +263,9 @@ def dequantitatize_layer(params):
         for index in range(len(params)):
             # params[index] = float("{:.5f}".format(params[index]))
             # float_result = float_bin(params[index])
-            float_result = str(bin_float(params[index]))
+            float_result = bin_float(params[index])
             _params_result.append(float_result)
-
+    _params_result = np.array(_params_result)
     return _params_result
 
 
@@ -396,12 +396,15 @@ class Network(object):
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
 
-
     def plot_image(self, index, data=[], name=''):
         if self.plt_enable:
             self.plt.figure(index)
             self.plt.title('{}'.format(name))
-            self.plt.imshow(np.reshape(data, (self.image_shape[2], self.image_shape[3])), cmap='gray')
+            self.plt.imshow(np.reshape(
+                data[0],
+                (self.layers[index+1].image_shape[2],
+                 self.layers[index+1].image_shape[3])),
+                cmap='gray')
             self.plt.show()
 
 
@@ -534,10 +537,7 @@ class Network(object):
                 self.x:
                     test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
-
-        print("data: ", vis_layer1(0)[0][0])
-            
-
+          
         if test_data:
             test_accuracy = np.mean(
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
@@ -733,10 +733,6 @@ class PoolLayer(object):
         bias_array = np.array(self.b)
         return weight_array.shape, bias_array.shape
     
-    def get_output(self):
-        return self.output.get_value()
-
-
 class FullyConnectedLayer(object):
 
     def __init__(self, plt, plt_enable, image_shape, n_out, activation_fn=sigmoid, p_dropout=0.0):
