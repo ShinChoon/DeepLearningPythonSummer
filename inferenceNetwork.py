@@ -111,13 +111,6 @@ def local_dequantitatize_layer(params, bits):
                 float_result = local_bin_float(C[index], bits)
                 _C_result.append(float_result)
             _params_result.append(_C_result)
-    else:  # normally for bias
-        _params_result = []
-        for index in range(len(params)):
-            # params[index] = float("{:.5f}".format(params[index]))
-            # float_result = local_float_bin(params[index])
-            float_result = local_bin_float(params[index], bits)
-            _params_result.append(float_result)
 
     return np.array(_params_result)
 
@@ -129,7 +122,7 @@ def local_quantitatize_layer(params, bits):
     normalize_scale = 0
     for i in range(bits):
         normalize_scale += 1/(2**(i+1))
-    
+
     params = np.array(params)
     _params_result = []
     if len(params.shape) > 2:  # normally for Conv
@@ -137,12 +130,20 @@ def local_quantitatize_layer(params, bits):
             # print("neuron: ", neuron)
             _neuron_result = []
             for ele in neuron:
+
+                abs_normalize = np.amax(ele)
+                normalize_factor = 1
+                if abs_normalize <= normalize_scale:
+                    normalize_factor = 1
+                else:
+                    normalize_factor = 1/abs_normalize*normalize_scale
+
                 _ele_result = []
                 for C in ele:
                     _C_result = []
                     for index in range(len(C)):
-                        abs_normalize = abs(C).max()
-                        _C_q = C[index]/abs_normalize*normalize_scale
+                        # abs_normalize = abs(C).max()
+                        _C_q = C[index]*normalize_factor
                         float_result = local_float_bin(_C_q, places=bits)
                         _C_result.append(float_result)
                     _ele_result.append(_C_result)
@@ -151,21 +152,22 @@ def local_quantitatize_layer(params, bits):
 
     elif len(params.shape) == 2:  # normally for MLP
         _params_result = []
+
         for C in params:
             _C_result = []
+            abs_normalize = np.amax(C)
+            normalize_factor = 1
+            if abs_normalize <= normalize_scale:
+                normalize_factor = 1
+            else:
+                normalize_factor = 1/abs_normalize*normalize_scale
             for index in range(len(C)):
-                abs_normalize = abs(C).max()
-                _C_q = C[index]/abs_normalize*normalize_scale
+                # abs_normalize = abs(C).max()
+                _C_q = C[index]*normalize_factor
                 float_result = local_float_bin(_C_q, places=bits)
                 _C_result.append(float_result)
             _params_result.append(_C_result)
-    else:  # normally for bias
-        _params_result = []
-        for index in range(len(params)):
-            abs_normalize = abs(params).max()
-            _param_q = params[index]/abs_normalize*normalize_scale
-            float_result = local_float_bin(_param_q, places=bits)
-            _params_result.append(float_result)
+
 
     return np.array(_params_result)
 
@@ -237,7 +239,7 @@ class Inference_Network(object):
 
     def test_network(self, test_data, mini_batch_size):
         test_mb_accuracy = np.mean([self.test_batch(
-                                    test_data, mini_batch_size, _i, 10) 
+                                    test_data, mini_batch_size, _i, 12) 
                                     for _i in range(mini_batch_size)])
         return test_mb_accuracy
 
@@ -262,14 +264,18 @@ class Inference_Network(object):
         
         output_L0 = vis_layer(index)
 
-        # # original_output_L0 = np.reshape(output_L0[0],  (self.layers[1].image_shape[0],
-                                                        # # self.layers[0].filter_shape[0],
-                                                        # # self.layers[1].image_shape[2],
-                                                        # # self.layers[1].image_shape[3]))
-        # # self.plot_image(0, original_output_L0[0],
-            # # ' original layer_{}'.format(0))
+        original_output_L0 = np.reshape(output_L0[0],  (self.layers[1].image_shape[0],
+                                                        self.layers[0].filter_shape[0],
+                                                        self.layers[1].image_shape[2],
+                                                        self.layers[1].image_shape[3]))
+        # self.plot_image(0, original_output_L0[0],
+            # ' original layer_{}'.format(0))
         _l0_output, _l0_output_dropout = self.DAC_ADC(output_L0[0], 
                                                       output_L0[1], quantized_bits, bypass=False)
+        # self.plot_image(0, _l0_output[0],
+                        # ' quantized layer_{}'.format(0))
+        # np.savetxt('dequantized_conv1.csv',  output_L0[0][8][2], fmt='%s', delimiter='  ')
+        # np.savetxt('quantized_conv1.csv', _l0_output[8][2], fmt='%s', delimiter='  ')
 
         #Pool 1
         self.layers[1].set_inpt(_l0_output,
