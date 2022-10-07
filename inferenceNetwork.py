@@ -12,8 +12,6 @@ from theano.tensor.nnet import softmax
 from theano.tensor import shared_randomstreams
 from theano.tensor.signal.pool import pool_2d
 from network3 import *
-bits = 12
-
 
 def local_bin_float(reciv_str, _bits=5):
     #remove decimal
@@ -81,7 +79,7 @@ def local_float_bin(number, places=5):
     return result
 
 
-def local_dequantitatize_layer(params):
+def local_dequantitatize_layer(params, bits):
     # params: one layer
     #debug
     params = np.array(params)
@@ -89,7 +87,7 @@ def local_dequantitatize_layer(params):
     if len(params.shape) > 2:  # normally for Conv
         for neuron in params:  # in one kernel
             # print("neuron: ", neuron)
-            _neuron_result = np.array([], dtype=np.float)
+            _neuron_result = []
             for ele in neuron:
                 _ele_result = []
                 for C in ele:
@@ -100,39 +98,38 @@ def local_dequantitatize_layer(params):
                         float_result = local_bin_float(C[index], bits)
                         _C_result.append(float_result)
                     _ele_result.append(_C_result)
-                _neuron_result = np.append(_neuron_result, _ele_result)
+                _neuron_result.append(_ele_result)
             _params_result.append(_neuron_result)
 
     elif len(params.shape) == 2:  # normally for MLP
         _params_result = []
         for C in params:
-            _C_result = np.array([], dtype=np.float)
+            _C_result = []
             for index in range(len(C)):
                 # C[index] = float("{:.5f}".format(C[index]))
                 # float_result = local_float_bin(C[index])
                 float_result = local_bin_float(C[index], bits)
-                _C_result = np.append(_C_result, float_result)
+                _C_result.append(float_result)
             _params_result.append(_C_result)
     else:  # normally for bias
         _params_result = []
         for index in range(len(params)):
             # params[index] = float("{:.5f}".format(params[index]))
             # float_result = local_float_bin(params[index])
-            float_result = np.array(
-                local_bin_float(params[index], bits), dtype=np.float)
+            float_result = local_bin_float(params[index], bits)
             _params_result.append(float_result)
 
     return np.array(_params_result)
 
 
-def local_quantitatize_layer(params):
+def local_quantitatize_layer(params, bits):
     # params: one layer
     #debug
     # generate the normalization scale
     normalize_scale = 0
     for i in range(bits):
         normalize_scale += 1/(2**(i+1))
-
+    
     params = np.array(params)
     _params_result = []
     if len(params.shape) > 2:  # normally for Conv
@@ -211,7 +208,6 @@ class Inference_Network(object):
                 self.occupation_list.append(layer.occupation)
         self.x = T.matrix("x")
         self.y = T.ivector("y")
-        self.z = T.ivector("y")
         # xrange() was renamed to range() in Python 3.
 
     def plot_image(self, index, data=[], name=''):
@@ -226,8 +222,27 @@ class Inference_Network(object):
                 cmap='gray')
             self.plt.show()
 
-### suggest to create an individual network2 class definition
+    def DAC_ADC(self, output, output_dropout, bits, bypass=False):
+        if not bypass:
+            _quantized_output = local_quantitatize_layer(output,bits)
+            _quantized_output_dropout = local_quantitatize_layer(
+                output_dropout,bits)
+            decoded_output = local_dequantitatize_layer(_quantized_output,bits)
+            decoded_dropout = local_dequantitatize_layer(
+                _quantized_output_dropout,bits)
+
+            return decoded_output, decoded_dropout
+        else:
+            return output, output_dropout
+
     def test_network(self, test_data, mini_batch_size):
+        test_mb_accuracy = np.mean([self.test_batch(
+                                    test_data, mini_batch_size, _i, 10) 
+                                    for _i in range(mini_batch_size)])
+        return test_mb_accuracy
+
+### suggest to create an individual network2 class definition
+    def test_batch(self, test_data, mini_batch_size, index, quantized_bits):
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
         num_test_batches = int(size(test_data)/mini_batch_size)
@@ -237,131 +252,72 @@ class Inference_Network(object):
         init_layer = self.layers[0]
         init_layer.set_inpt(self.x, self.x, self.mini_batch_size)
 
-        vis_layer0 = theano.function(
+        vis_layer = theano.function(
             [i], [self.layers[_index].output, self.layers[_index].output_dropout],
             givens={
                 self.x:
                     test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
             },
         )
+        
+        output_L0 = vis_layer(index)
 
-        sample_index = 1
-        output_L0 = vis_layer0(0)
-        original_output_L0 = np.reshape(output_L0[0],  (self.layers[1].image_shape[0],
-                                                        self.layers[0].filter_shape[0],
-                                                        self.layers[1].image_shape[2],
-                                                        self.layers[1].image_shape[3]))
-        # self.plot_image(0, original_output_L0[sample_index],
-        # ' original layer_{}'.format(0))
-
-        _decoded_output_L0_output = local_quantitatize_layer(output_L0[0])
-        _decoded_output_L0_output_dropout = local_quantitatize_layer(output_L0[1])
-        _l0_output = local_dequantitatize_layer(_decoded_output_L0_output)
-        _l0_output_dropout = local_dequantitatize_layer(_decoded_output_L0_output_dropout)
-
-        # _l0_output = np.reshape(_l0_output, (self.layers[1].image_shape[0],
-        # self.layers[0].filter_shape[0],
-        # self.layers[1].image_shape[2],
-        # self.layers[1].image_shape[3]))  # for image ploting only
-        # self.plot_image(0, _l0_output[sample_index],
-        #  'quantized layer_{}'.format(0))
+        # # original_output_L0 = np.reshape(output_L0[0],  (self.layers[1].image_shape[0],
+                                                        # # self.layers[0].filter_shape[0],
+                                                        # # self.layers[1].image_shape[2],
+                                                        # # self.layers[1].image_shape[3]))
+        # # self.plot_image(0, original_output_L0[0],
+            # # ' original layer_{}'.format(0))
+        _l0_output, _l0_output_dropout = self.DAC_ADC(output_L0[0], 
+                                                      output_L0[1], quantized_bits, bypass=False)
 
         #Pool 1
         self.layers[1].set_inpt(_l0_output,
                                 _l0_output_dropout, self.mini_batch_size)
-
         _data_l1_output = self.layers[1].output.eval()
         _data_l1_dropout = self.layers[1].output_dropout.eval()
-
-        original_output_L1 = np.reshape(_data_l1_output, (self.layers[2].image_shape[0],
-                                                          # pooling layer has 1 here
-                                                          self.layers[1].filter_shape[0],
-                                                          self.layers[2].image_shape[2],
-                                                          self.layers[2].image_shape[3]))
-        # self.plot_image(1, original_output_L1[sample_index],
-        # 'layer_pool{}'.format(1))
-
         #Conv2
         self.layers[2].set_inpt(_data_l1_output,
                                 _data_l1_dropout, self.mini_batch_size)
-
         _data_l2_output = self.layers[2].output.eval()
         _data_l2_output_dropout = self.layers[2].output_dropout.eval()
-
-        _decoded_output_L2_output = local_quantitatize_layer(
-            _data_l2_output)
-        _decoded_output_L2_output_dropout = local_quantitatize_layer(
-            _data_l2_output_dropout)
-        _l2_output = local_dequantitatize_layer(_decoded_output_L2_output)
-        _l2_output_dropout = local_dequantitatize_layer(
-            _decoded_output_L2_output_dropout)
-
-        # original_output_L2 = np.reshape(_l2_output,  (self.layers[3].image_shape[0],
-        # self.layers[2].filter_shape[0],
-        # self.layers[3].image_shape[2],
-        # self.layers[3].image_shape[3]))
-        # self.plot_image(2, original_output_L2[sample_index],
-        # 'layer_Conv{}'.format(2))
+        _l2_output, _l2_output_dropout = self.DAC_ADC(_data_l2_output, 
+                                                      _data_l2_output_dropout, quantized_bits, bypass=False)
 
         #Pool 2
         self.layers[3].set_inpt(_l2_output,
                                 _l2_output_dropout, self.mini_batch_size)
-
         _data_l3_output = self.layers[3].output.eval()
         _data_l3_dropout = self.layers[3].output_dropout.eval()
-
-        original_output_L3 = np.reshape(_data_l3_output,  (self.layers[3].image_shape[0],
-                                                           self.layers[3].filter_shape[0],
-                                                           self.layers[4].image_shape[2],
-                                                           self.layers[4].image_shape[3]))
-        # self.plot_image(3, original_output_L3[sample_index],
-        # 'layer_{}'.format(3))
-
         #FC1
         self.layers[4].set_inpt(_data_l3_output,
                                 _data_l3_dropout, self.mini_batch_size)
-
         _data_l4_output = self.layers[4].output.eval()
         _data_l4_dropout = self.layers[4].output_dropout.eval()
 
-        _decoded_output_L4_output = local_quantitatize_layer(
-            _data_l4_output)
-        _decoded_output_L4_output_dropout = local_quantitatize_layer(
-            _data_l4_dropout)
-        _l4_output = local_dequantitatize_layer(_decoded_output_L4_output)
-        _l4_output_dropout = local_dequantitatize_layer(
-            _decoded_output_L4_output_dropout)
+        _l4_output, _l4_output_dropout = self.DAC_ADC(
+            _data_l4_output, _data_l4_dropout, quantized_bits, bypass=False)
 
         #FC2
         self.layers[5].set_inpt(_l4_output,
                                 _l4_output_dropout, self.mini_batch_size)
-
         _data_l5_output = self.layers[5].output.eval()
         _data_l5_dropout = self.layers[5].output_dropout.eval()
 
-        _quantized_output_l5_output = local_quantitatize_layer(
-            _data_l5_output)
-        _quantized_output_l5_output_dropout = local_quantitatize_layer(
-            _data_l5_dropout)
-        _l5_output = local_dequantitatize_layer(_quantized_output_l5_output)
-        _l5_output_dropout = local_dequantitatize_layer(
-            _quantized_output_l5_output_dropout)
-
-        # _l5_output = np.reshape(_l5_output, (10,10))
+        _l5_output, _l5_output_dropout = self.DAC_ADC(
+            _data_l5_output, _data_l5_dropout, quantized_bits, bypass=False)
 
         accuray_fn = theano.function(
-            [i], T.mean(T.eq(self.z, T.argmax(_l5_output, axis=1))),
+            [i], T.mean(T.eq(self.y, T.argmax(_l5_output, axis=1))),
             givens={
-                self.z:
+                self.y:
                     test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             },
         )
-
-        if test_data:
-            test_accuracy = accuray_fn(0)
-            print('corresponding test accuracy is {0:.2%}'.format(
-                test_accuracy))
-
+        test_accuracy = accuray_fn(index)
+        print('corresponding test accuracy is {0:.2%}'.format(
+                        test_accuracy))
+        
         return test_accuracy
 
     def reset_params(self, _params=None, scan_range=0):

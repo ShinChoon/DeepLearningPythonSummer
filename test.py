@@ -133,7 +133,7 @@ def create_and_test():
                 mini_batch_size=mini_batch_size)
             
 
-    accuracy_trained, cost, _params = net.SGD(training_data=training_data, epochs=10, 
+    accuracy_trained, cost, _params = net.SGD(training_data=training_data, epochs=2, 
                                                 mini_batch_size=mini_batch_size, 
                                                 eta=0.03, validation_data=validation_data, 
                                                 test_data=test_data, lmbda=0.1)
