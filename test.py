@@ -183,7 +183,7 @@ def test_network(bits,_params):
         
     # let net2 inherit (w,b) from net
     net2.reset_params(_params, scan_range=len(_params)+4)
-    test_accuracy = net2.test_network(test_data,mini_batch_size,7)
+    test_accuracy = net2.test_network(test_data,mini_batch_size,bits+7)
     print("test_accuracy from net2: {:.2%}".format(test_accuracy))
     usage_ratio = net2.occupation_list
     return test_accuracy, usage_ratio

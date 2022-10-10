@@ -62,7 +62,7 @@ def bin_float(reciv_str, _bits=5):
     if digit_location != -1:
         for i in reciv_str[0:digit_location]:
             answer = answer + int(i) * 1 * 2**factor
-            factor = factor + 1
+            # factor = factor + 1
 
     if not P_flag:
         answer = -1 * answer
@@ -126,7 +126,7 @@ def save_data_shared(filename, params, columns):
     """
     Below 3 lines are the step to save it as readable csv
     """
-    param_list = [param.get_value() for param in params]
+    param_list = [normalize_params(param.get_value(), upper=0.9375, down=-0.9375) for param in params]
     _param_list_result = []
     _decoded_params = []
     for param in param_list:
@@ -180,9 +180,7 @@ def save_data_shared(filename, params, columns):
     np.savetxt('params.csv', _param_list_result, fmt='%s', delimiter='')
     np.savetxt('param_decoded.csv', _decoded_params,
                fmt='%s', delimiter='')
-
     return decoded_params_output
-
 
 def quantitatize_layer(params):
     # params: one layer
@@ -195,18 +193,11 @@ def quantitatize_layer(params):
             _neuron_result = []
             for ele in neuron:
                 _ele_result = []
-
-                abs_normalize = np.amax(ele)
-                normalize_factor = 1
-                if abs_normalize <= 0.9375:
-                    normalize_factor = 1
-                else:
-                    normalize_factor = 1/abs_normalize*0.9375
-
                 for C in ele:
                     _C_result = []
+                    # C = normalize_params(C, 1, -1)
                     for index in range(len(C)):
-                        _C_q = C[index]*normalize_factor
+                        _C_q = C[index]
                         float_result = float_bin(_C_q)
                         _C_result.append(float_result)
                     _ele_result.append(_C_result)
@@ -217,27 +208,24 @@ def quantitatize_layer(params):
         _params_result = []
         for C in params:
             _C_result = []
-            abs_normalize = np.amax(C)
-            normalize_factor = 1
-            if abs_normalize <= 0.9375:
-                normalize_factor = 1
-            else:
-                normalize_factor = 1/abs_normalize*0.9375            
+            # C = normalize_params(C, 1, -1)
             for index in range(len(C)):
-                _C_q = C[index]*normalize_factor
+                _C_q = C[index]
                 float_result = float_bin(_C_q)
                 _C_result.append(float_result)
             _params_result.append(_C_result)
     else:  # normally for bias
         _params_result = []
-        abs_normalize = np.amax(params)
-        normalize_factor = 1
-        if abs_normalize <= 0.9375:
-            normalize_factor = 1
-        else:
-            normalize_factor = 1/abs_normalize*0.9375 
+        # params = normalize_params(params, 1, -1)
+
+        # abs_normalize = np.amax(params)
+        # normalize_factor = 1
+        # if abs_normalize <= 0.9375:
+            # normalize_factor = 1
+        # else:
+            # normalize_factor = 1/abs_normalize*0.9375 
         for index in range(len(params)):
-            _param_q = params[index]*normalize_factor
+            _param_q = params[index]
             float_result = float_bin(_param_q)
             _params_result.append(float_result)
     _params_result = np.array(_params_result)
@@ -366,7 +354,15 @@ def load_data_shared(filename="mnist.pkl.gz"):
 
 #### Main class used to construct and train networks
 
+def normalize_input(data, upper=1, down=-1):
+    result = (upper-down)*(data-T.min(data))/(T.max(data)- T.min(data)) + down 
+    return result
 
+
+def normalize_params(data, upper=1, down=0):
+    # result = (data/np.linalg.norm(data))
+    result = (upper - down)*(data - np.min(data))/(np.max(data)-np.min(data)) + down
+    return result
 class Network(object):
 
     def __init__(self, plt, plt_enable, layers, mini_batch_size):
@@ -415,16 +411,14 @@ class Network(object):
         self.output_dropout = self.layers[-1].output_dropout
 
     def plot_image(self, index, data=[], name=''):
-        if self.plt_enable:
-            self.plt.figure(index)
-            self.plt.title('{}'.format(name))
-            self.plt.imshow(np.reshape(
-                data[0],
-                (self.layers[index+1].image_shape[2],
-                 self.layers[index+1].image_shape[3])),
-                cmap='gray')
-            self.plt.show()
-
+        self.plt.figure(index)
+        self.plt.title('{}'.format(name))
+        self.plt.imshow(np.reshape(
+            data[0],
+            (self.layers[index+1].image_shape[2],
+             self.layers[index+1].image_shape[3])),
+            cmap='gray')
+        self.plt.show()
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
             validation_data, test_data, lmbda=0.0):
@@ -461,7 +455,7 @@ class Network(object):
             [i], cost_train, updates=updates,
             givens={
                 self.x:
-                training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+                    normalize_input(training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size], upper=1,down=-1),
                 self.y:
                 training_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
@@ -469,12 +463,28 @@ class Network(object):
             [i], self.layers[-1].accuracy(self.y),
             givens={
                 self.x:
-                validation_x[i *
-                             self.mini_batch_size: (i+1)*self.mini_batch_size],
+                normalize_input(validation_x[i *
+                             self.mini_batch_size: (i+1)*self.mini_batch_size],1,-1),
                 self.y:
                 validation_y[i *
                              self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
+
+        vis_layer = theano.function(
+            [i], [self.layers[0].inpt],
+            givens={
+                self.x:
+                    normalize_input(test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]),
+            },
+        )
+        
+        # output_L0 = np.array(vis_layer(0))
+        # result = np.array(test_x[0:self.mini_batch_size].eval())
+        # result = np.reshape(result, (10,28,28))
+        # np.savetxt('normalized_output_L0.csv', output_L0[0][4][0], fmt='%s', delimiter='  ')
+        # np.savetxt('output_L0.csv',
+        #            result[4], fmt='%s', delimiter='  ')
+
 
         # Do the actual training
         best_validation_accuracy = 0.0
@@ -528,12 +538,12 @@ class Network(object):
 
         return self.accuracy_list[-1], self.cost_list[-1], self.decoded_params
 
+
 ### suggest to create an individual network2 class definition
     def test_network(self, test_data, mini_batch_size):
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
         num_test_batches = int(size(test_data)/mini_batch_size)
-        print("@@num_test_batches:", num_test_batches)
         test_mb_accuracy = theano.function(
             [i], self.layers[-1].accuracy(self.y),
             givens={
@@ -550,8 +560,8 @@ class Network(object):
                     test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
 
-        vis_layer1 = theano.function(
-            [i], [self.layers[1].output],
+        vis_layer0 = theano.function(
+            [i], [self.layers[0].output],
             givens={
                 self.x:
                     test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
@@ -577,7 +587,6 @@ class Network(object):
             _params = self.decoded_params
         decode_index = -1
         for index in range(scan_range):
-            # print("index: ", index)
             if index % 2 == 0:
                 if not self.layers[int(index/2)].skip_paramterize():
                     decode_index = decode_index + 1

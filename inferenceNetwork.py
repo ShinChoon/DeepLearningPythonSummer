@@ -231,12 +231,10 @@ class Inference_Network(object):
             return output, output_dropout
 
     def test_network(self, test_data, mini_batch_size,bits):
-        num_test_batches = int(size(test_data)/mini_batch_size)
-        print("num_test_batches: ", num_test_batches)
         print("num_test_batches: ", mini_batch_size)
         test_mb_accuracy = np.mean([self.test_batch(
                                     test_data, _i, bits) 
-                                    for _i in range(num_test_batches)])
+                                    for _i in range(mini_batch_size)])
         print('corresponding test accuracy is {0:.2%} at output solution {1} bits'.format(
             test_mb_accuracy, bits))
         return test_mb_accuracy
@@ -255,7 +253,8 @@ class Inference_Network(object):
             [i], [self.layers[_index].output, self.layers[_index].output_dropout],
             givens={
                 self.x:
-                    test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+                    normalize_input(test_x[i *
+                                          self.mini_batch_size: (i+1)*self.mini_batch_size]),
             },
         )
         
