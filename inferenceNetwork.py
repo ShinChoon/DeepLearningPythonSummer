@@ -86,15 +86,12 @@ def local_dequantitatize_layer(params, bits):
     _params_result = []
     if len(params.shape) > 2:  # normally for Conv
         for neuron in params:  # in one kernel
-            # print("neuron: ", neuron)
             _neuron_result = []
             for ele in neuron:
                 _ele_result = []
                 for C in ele:
                     _C_result = []
                     for index in range(len(C)):
-                        # C[index] = float("{:.5f}".format(C[index]))
-                        # float_result = local_float_bin(C[index])
                         float_result = local_bin_float(C[index], bits)
                         _C_result.append(float_result)
                     _ele_result.append(_C_result)
@@ -106,8 +103,6 @@ def local_dequantitatize_layer(params, bits):
         for C in params:
             _C_result = []
             for index in range(len(C)):
-                # C[index] = float("{:.5f}".format(C[index]))
-                # float_result = local_float_bin(C[index])
                 float_result = local_bin_float(C[index], bits)
                 _C_result.append(float_result)
             _params_result.append(_C_result)
@@ -127,22 +122,20 @@ def local_quantitatize_layer(params, bits):
     _params_result = []
     if len(params.shape) > 2:  # normally for Conv
         for neuron in params:  # in one kernel
-            # print("neuron: ", neuron)
             _neuron_result = []
             for ele in neuron:
+                _ele_result = []
 
                 abs_normalize = np.amax(ele)
-                normalize_factor = 1
-                if abs_normalize <= normalize_scale:
-                    normalize_factor = 1
-                else:
-                    normalize_factor = 1/abs_normalize*normalize_scale
+                # normalize_factor = 1
+                # if abs_normalize <= normalize_scale:
+                    # normalize_factor = 1
+                # else:
+                normalize_factor = (1/abs_normalize)*normalize_scale
 
-                _ele_result = []
                 for C in ele:
                     _C_result = []
                     for index in range(len(C)):
-                        # abs_normalize = abs(C).max()
                         _C_q = C[index]*normalize_factor
                         float_result = local_float_bin(_C_q, places=bits)
                         _C_result.append(float_result)
@@ -152,22 +145,22 @@ def local_quantitatize_layer(params, bits):
 
     elif len(params.shape) == 2:  # normally for MLP
         _params_result = []
-
         for C in params:
             _C_result = []
+
             abs_normalize = np.amax(C)
-            normalize_factor = 1
-            if abs_normalize <= normalize_scale:
-                normalize_factor = 1
-            else:
-                normalize_factor = 1/abs_normalize*normalize_scale
+            # normalize_factor = 1
+            # if abs_normalize <= normalize_scale:
+                # normalize_factor = 1
+            # else:
+            normalize_factor = 1/abs_normalize*normalize_scale
+
             for index in range(len(C)):
                 # abs_normalize = abs(C).max()
                 _C_q = C[index]*normalize_factor
                 float_result = local_float_bin(_C_q, places=bits)
                 _C_result.append(float_result)
             _params_result.append(_C_result)
-
 
     return np.array(_params_result)
 
@@ -224,7 +217,7 @@ class Inference_Network(object):
                 cmap='gray')
             self.plt.show()
 
-    def DAC_ADC(self, output, output_dropout, bits, bypass=False):
+    def ADC_DAC(self, output, output_dropout, bits, bypass=False):
         if not bypass:
             _quantized_output = local_quantitatize_layer(output,bits)
             _quantized_output_dropout = local_quantitatize_layer(
@@ -237,23 +230,27 @@ class Inference_Network(object):
         else:
             return output, output_dropout
 
-    def test_network(self, test_data, mini_batch_size):
+    def test_network(self, test_data, mini_batch_size,bits):
+        num_test_batches = int(size(test_data)/mini_batch_size)
+        print("num_test_batches: ", num_test_batches)
+        print("num_test_batches: ", mini_batch_size)
         test_mb_accuracy = np.mean([self.test_batch(
-                                    test_data, mini_batch_size, _i, 12) 
-                                    for _i in range(mini_batch_size)])
+                                    test_data, _i, bits) 
+                                    for _i in range(num_test_batches)])
+        print('corresponding test accuracy is {0:.2%} at output solution {1} bits'.format(
+            test_mb_accuracy, bits))
         return test_mb_accuracy
 
 ### suggest to create an individual network2 class definition
-    def test_batch(self, test_data, mini_batch_size, index, quantized_bits):
+    def test_batch(self, test_data, batch_index, quantized_bits):
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
-        num_test_batches = int(size(test_data)/mini_batch_size)
-        _index = 0
+        _index = 0 #index to get output at layer 1
 
         #Conv1
         init_layer = self.layers[0]
-        init_layer.set_inpt(self.x, self.x, self.mini_batch_size)
 
+        init_layer.set_inpt(self.x, self.x, self.mini_batch_size)
         vis_layer = theano.function(
             [i], [self.layers[_index].output, self.layers[_index].output_dropout],
             givens={
@@ -262,15 +259,15 @@ class Inference_Network(object):
             },
         )
         
-        output_L0 = vis_layer(index)
+        output_L0 = vis_layer(batch_index)
 
-        original_output_L0 = np.reshape(output_L0[0],  (self.layers[1].image_shape[0],
-                                                        self.layers[0].filter_shape[0],
-                                                        self.layers[1].image_shape[2],
-                                                        self.layers[1].image_shape[3]))
+        # original_output_L0 = np.reshape(output_L0[0],  (self.layers[1].image_shape[0],
+                                                        # self.layers[0].filter_shape[0],
+                                                        # self.layers[1].image_shape[2],
+                                                        # self.layers[1].image_shape[3]))
         # self.plot_image(0, original_output_L0[0],
             # ' original layer_{}'.format(0))
-        _l0_output, _l0_output_dropout = self.DAC_ADC(output_L0[0], 
+        _l0_output, _l0_output_dropout = self.ADC_DAC(output_L0[0], 
                                                       output_L0[1], quantized_bits, bypass=False)
         # self.plot_image(0, _l0_output[0],
                         # ' quantized layer_{}'.format(0))
@@ -287,7 +284,7 @@ class Inference_Network(object):
                                 _data_l1_dropout, self.mini_batch_size)
         _data_l2_output = self.layers[2].output.eval()
         _data_l2_output_dropout = self.layers[2].output_dropout.eval()
-        _l2_output, _l2_output_dropout = self.DAC_ADC(_data_l2_output, 
+        _l2_output, _l2_output_dropout = self.ADC_DAC(_data_l2_output, 
                                                       _data_l2_output_dropout, quantized_bits, bypass=False)
 
         #Pool 2
@@ -301,7 +298,7 @@ class Inference_Network(object):
         _data_l4_output = self.layers[4].output.eval()
         _data_l4_dropout = self.layers[4].output_dropout.eval()
 
-        _l4_output, _l4_output_dropout = self.DAC_ADC(
+        _l4_output, _l4_output_dropout = self.ADC_DAC(
             _data_l4_output, _data_l4_dropout, quantized_bits, bypass=False)
 
         #FC2
@@ -310,7 +307,7 @@ class Inference_Network(object):
         _data_l5_output = self.layers[5].output.eval()
         _data_l5_dropout = self.layers[5].output_dropout.eval()
 
-        _l5_output, _l5_output_dropout = self.DAC_ADC(
+        _l5_output, _l5_output_dropout = self.ADC_DAC(
             _data_l5_output, _data_l5_dropout, quantized_bits, bypass=False)
 
         accuray_fn = theano.function(
@@ -320,9 +317,7 @@ class Inference_Network(object):
                     test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             },
         )
-        test_accuracy = accuray_fn(index)
-        print('corresponding test accuracy is {0:.2%}'.format(
-                        test_accuracy))
+        test_accuracy = accuray_fn(batch_index)
         
         return test_accuracy
 
@@ -340,8 +335,6 @@ class Inference_Network(object):
                     self.layers[int(
                         index/2)].w.set_value(_params[decode_index])
 
-                    # print(self.layers[int((index)/2)])
-                    # print(int((index)/2))
 
             else:
                 if not self.layers[int((index-1)/2)].skip_paramterize():
@@ -350,6 +343,3 @@ class Inference_Network(object):
                         self.layers[int((index-1)/2)].b.get_value())
                     self.layers[int((index-1)/2)
                                 ].b.set_value(_params[decode_index])
-
-                    # print(self.layers[int((index-1)/2)])
-                    # print(int((index-1)/2))

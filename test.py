@@ -17,7 +17,7 @@ from draw_IMC import Draw_IMC
 train_accuracylist = []
 test_accuracylist = []
 cost_list = []
-epoch_index = 1
+epoch_index = 10
 epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
 
 # read data:
@@ -85,7 +85,11 @@ filter_shape6 = (i_f_map[5][2], i_f_map[5][3], conv_scale, conv_scale)
 image_shape7 = (mini_batch_size, i_f_map[5][3], i_f_map[6][0], i_f_map[6][1])
 filter_shape7 = (i_f_map[6][2], i_f_map[6][3], conv_scale, conv_scale)
 
-def create_and_test():
+def training_network():
+
+    """
+    create models for training network
+    """
 
     Conv1 = ConvLayer(plt, plt_enable=False, image_shape=image_shape1,
                       filter_shape=filter_shape1,
@@ -107,17 +111,10 @@ def create_and_test():
                       poolsize=(pool_scale, pool_scale),
                       activation_fn=ReLU, _params=Conv2.params)
 
-    Conv3 = ConvLayer(plt, plt_enable=False, image_shape=image_shape5,
-                      filter_shape=filter_shape5,
-                      poolsize=(pool_scale, pool_scale),
-                      activation_fn=ReLU, border_mode='half')
 
     MLP1 = FullyConnectedLayer(plt, plt_enable=False, image_shape=image_shape6, n_out=i_f_map[5][-1],
                                activation_fn=ReLU, p_dropout=0.5)
-
-    MLP2 = FullyConnectedLayer(plt, plt_enable=False, image_shape=image_shape7,
-                               n_out=i_f_map[6][3], activation_fn=ReLU, p_dropout=0.5)
-                               
+                           
     SMLayer = SoftmaxLayer(plt, plt_enable=False, image_shape=image_shape7,
                            n_out=i_f_map[6][3])
 
@@ -138,31 +135,68 @@ def create_and_test():
                                                 eta=0.03, validation_data=validation_data, 
                                                 test_data=test_data, lmbda=0.1)
     
-    # print("size of layers: ", len(net.layers))  # skipping pooling
-    # print("size of params: ", len(net.params))  # skipping pooling
+    return accuracy_trained, cost, _params
 
+def test_network(bits,_params):
+    """
+    params bits: for changing bits for quantization of output by layers 
+    params _params: weights and bias by layers 
+    """
+
+    Conv1 = ConvLayer(plt, plt_enable=False, image_shape=image_shape1,
+                      filter_shape=filter_shape1,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU, border_mode='half')
+
+    Pool1 = PoolLayer(image_shape=image_shape2,
+                      filter_shape=filter_shape2,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU, _params=Conv1.params)
+
+    Conv2 = ConvLayer(plt, plt_enable=False, image_shape=image_shape3,
+                      filter_shape=filter_shape3,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU, border_mode='valid')
+
+    Pool2 = PoolLayer(image_shape=image_shape4,
+                      filter_shape=filter_shape4,
+                      poolsize=(pool_scale, pool_scale),
+                      activation_fn=ReLU, _params=Conv2.params)
+
+    MLP1 = FullyConnectedLayer(plt, plt_enable=False, image_shape=image_shape6, n_out=i_f_map[5][-1],
+                               activation_fn=ReLU, p_dropout=0.5)
+
+    MLP2 = FullyConnectedLayer(plt, plt_enable=False, image_shape=image_shape7,
+                               n_out=i_f_map[6][3], activation_fn=ReLU, p_dropout=0.5)
     net2 = Inference_Network(
-        plt,
-        plt_enable=True,
-        layers=[
-        Conv1,
-        Pool1,
-        Conv2,
-        Pool2,
-        MLP1,
-        MLP2  # FC
-        ], 
-        mini_batch_size=mini_batch_size)
+                            plt,
+                            plt_enable=True,
+                            layers=[
+                            Conv1,
+                            Pool1,
+                            Conv2,
+                            Pool2,
+                            MLP1,
+                            MLP2  # FC
+                            ], 
+                            mini_batch_size=mini_batch_size)
         
     # let net2 inherit (w,b) from net
     net2.reset_params(_params, scan_range=len(_params)+4)
-    test_accuracy = net2.test_network(test_data,mini_batch_size)
+    test_accuracy = net2.test_network(test_data,mini_batch_size,7)
     print("test_accuracy from net2: {:.2%}".format(test_accuracy))
     usage_ratio = net2.occupation_list
+    return test_accuracy, usage_ratio
     
-    return accuracy_trained, test_accuracy, cost, usage_ratio
+
 
 def plot_n(indexlists, valuelists, labellist):
+    """
+    the length of params should be the same
+    params indexlists: list of test indexs 
+    params valuelists: list of values should be ploted
+    params labellist: list of titles for each plot
+    """
     if len(indexlists) == len(valuelists) == len(labellist):
         fig, axes = plt.subplots(len(indexlists), 1)
         for ind in range(len(axes)):
@@ -178,14 +212,15 @@ def plot_n(indexlists, valuelists, labellist):
                 for i, j in zip(indexlists[ind], valuelists[ind]):
                     axes[ind].annotate('{:.3}'.format(j), xy=(i, j))
 
-        fig.savefig("result_after_zero_4.png")
+        fig.savefig("result_7_100.png")
         plt.show()  # display
 
 
 if __name__ == '__main__':
 
     for i in range(epoch_index):
-        accuracy_trained, test_accuracy, cost, usage_ratio = create_and_test()
+        accuracy_trained, cost, _params = training_network()
+        test_accuracy, usage_ratio = test_network(i, _params)
         train_accuracylist.append(accuracy_trained)
         test_accuracylist.append(test_accuracy)
         cost_list.append(cost)

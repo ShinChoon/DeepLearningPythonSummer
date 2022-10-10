@@ -4,6 +4,7 @@
 
 #### Libraries
 # Standard library
+from imp import C_EXTENSION
 from theano.tensor.nnet import sigmoid
 import pickle
 import gzip
@@ -194,11 +195,18 @@ def quantitatize_layer(params):
             _neuron_result = []
             for ele in neuron:
                 _ele_result = []
+
+                abs_normalize = np.amax(ele)
+                normalize_factor = 1
+                if abs_normalize <= 0.9375:
+                    normalize_factor = 1
+                else:
+                    normalize_factor = 1/abs_normalize*0.9375
+
                 for C in ele:
                     _C_result = []
                     for index in range(len(C)):
-                        abs_normalize = abs(C).max()
-                        _C_q = C[index]/abs_normalize*0.9375
+                        _C_q = C[index]*normalize_factor
                         float_result = float_bin(_C_q)
                         _C_result.append(float_result)
                     _ele_result.append(_C_result)
@@ -209,17 +217,27 @@ def quantitatize_layer(params):
         _params_result = []
         for C in params:
             _C_result = []
+            abs_normalize = np.amax(C)
+            normalize_factor = 1
+            if abs_normalize <= 0.9375:
+                normalize_factor = 1
+            else:
+                normalize_factor = 1/abs_normalize*0.9375            
             for index in range(len(C)):
-                abs_normalize = abs(C).max()
-                _C_q = C[index]/abs_normalize*0.9375
+                _C_q = C[index]*normalize_factor
                 float_result = float_bin(_C_q)
                 _C_result.append(float_result)
             _params_result.append(_C_result)
     else:  # normally for bias
         _params_result = []
+        abs_normalize = np.amax(params)
+        normalize_factor = 1
+        if abs_normalize <= 0.9375:
+            normalize_factor = 1
+        else:
+            normalize_factor = 1/abs_normalize*0.9375 
         for index in range(len(params)):
-            abs_normalize = abs(params).max()
-            _param_q = params[index]/abs_normalize*0.9375
+            _param_q = params[index]*normalize_factor
             float_result = float_bin(_param_q)
             _params_result.append(float_result)
     _params_result = np.array(_params_result)
@@ -515,6 +533,7 @@ class Network(object):
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
         num_test_batches = int(size(test_data)/mini_batch_size)
+        print("@@num_test_batches:", num_test_batches)
         test_mb_accuracy = theano.function(
             [i], self.layers[-1].accuracy(self.y),
             givens={
@@ -545,8 +564,8 @@ class Network(object):
                 test_accuracy))
                 
 
-        test_predictions = [test_mb_predictions(
-            j) for j in range(num_test_batches)]
+        # test_predictions = [test_mb_predictions(
+            # j) for j in range(num_test_batches)]
 
         # for prediction in test_predictions:
             # print('The corresponding test prediction is ', prediction)
@@ -566,7 +585,7 @@ class Network(object):
                     self.layers[int(
                         index/2)].w.set_value(_params[decode_index])
 
-                    print(self.layers[int((index)/2)])
+                    # print(self.layers[int((index)/2)])
                     # print(int((index)/2))
 
             else:
@@ -577,7 +596,7 @@ class Network(object):
                     self.layers[int((index-1)/2)
                                 ].b.set_value(_params[decode_index])
                     
-                    print(self.layers[int((index-1)/2)])
+                    # print(self.layers[int((index-1)/2)])
                     # print(int((index-1)/2))
 
 
