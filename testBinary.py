@@ -1,17 +1,16 @@
 import numpy as np
 
 
-def bin_float(reciv_str, _bits=4):
+def bin_float(reciv_str, _bits=5):
     #remove decimal
-    _bits -= 1
-    resolution = 1/(2**(_bits))
     digit_location = reciv_str.find('.')
     if digit_location != -1:
         clip_str = reciv_str[(digit_location+1):]
+        str_num = clip_str
     else:
         clip_str = reciv_str
-    P_flag = False if clip_str[0] == '1' else True
-    str_num = clip_str[1:]
+        str_num = clip_str[1:]
+    P_flag = False if reciv_str[0] == '1' else True
     answer = 0
     factor = 0
     for i in str_num:
@@ -20,11 +19,13 @@ def bin_float(reciv_str, _bits=4):
 
     factor = 0
     if digit_location != -1:
-        for i in reciv_str[0:digit_location]:
+        reciv_str = reciv_str[1:digit_location]
+        reverse_num = reciv_str[::-1]
+        for i in reverse_num:
             answer = answer + int(i) * 1 * 2**factor
             factor = factor + 1
 
-    if not P_flag:
+    if not P_flag and answer != 0:
         answer = -1 * answer
 
     return answer
@@ -39,7 +40,7 @@ def float_bin(number, places=5):
     _number = source if source >= 0 else -1*source
     whole, dec = str(source).split(".")
     dec = int(dec)
-    whole = int(whole)
+    whole = abs(int(whole))
     dec = _number - int(whole)
     res = bin(0).lstrip("0b")
     if whole > 0:

@@ -5,7 +5,8 @@
 #### Libraries
 # Standard library
 from imp import C_EXTENSION
-from theano.tensor.nnet import sigmoid
+from theano.tensor.nnet import sigmoid, relu
+from theano.tensor import tanh
 import pickle
 import gzip
 # Third-party libraries
@@ -44,14 +45,14 @@ else:
 def bin_float(reciv_str, _bits=5):
     #remove decimal
     _bits -= 1
-    resolution = 1/(2**(_bits))
     digit_location = reciv_str.find('.')
     if digit_location != -1:
         clip_str = reciv_str[(digit_location+1):]
+        str_num = clip_str
     else:
         clip_str = reciv_str
-    P_flag = False if clip_str[0] == '1' else True
-    str_num = clip_str[1:]
+        str_num = clip_str[1:]
+    P_flag = False if reciv_str[0] == '1' else True
     answer = 0
     factor = 0
     for i in str_num:
@@ -60,11 +61,13 @@ def bin_float(reciv_str, _bits=5):
 
     factor = 0
     if digit_location != -1:
-        for i in reciv_str[0:digit_location]:
+        reciv_str = reciv_str[0:digit_location]
+        reverse_num = reciv_str[::-1]
+        for i in reverse_num:
             answer = answer + int(i) * 1 * 2**factor
-            # factor = factor + 1
+            factor = factor + 1
 
-    if not P_flag:
+    if not P_flag and answer != 0:
         answer = -1 * answer
 
     return answer
@@ -121,26 +124,82 @@ def decimal_converter(num):
         num /= 10
     return num
 
+def quantize_linear_params(array, bits, max_v, min_v):
+    """
+    no need to do binary transformation
+    """
 
-def save_data_shared(filename, params, columns):
+    
+    resolution = (max_v-min_v)/(2**(bits))
+    result = resolution*np.round(array/resolution)
+    return result
+
+
+def quantize_linear_output(array, bits):
+    """
+    no need to do binary transformation
+    """
+    max_v = np.amax(array)
+    min_v = np.amin(array)
+
+    resolution = (max_v-min_v)/(2**(bits))
+    result = resolution*np.round(array/resolution)
+    return result
+
+def rescale_linear_params(array, down, upper):
+    """Rescale an arrary linearly."""
+    result = (upper - down)*(array - np.min(array))/(np.max(array)-np.min(array)) + down
+    return result
+
+def rescale_linear_input(array, down, upper):
+    """Rescale an arrary linearly."""
+    result = (upper - down)*(array - T.min(array))/(T.max(array)-T.min(array)) + down
+    return result
+
+def save_data_shared(filename, params, columns, bits=5):
     """
     Below 3 lines are the step to save it as readable csv
     """
-    param_list = [normalize_params(param.get_value(), upper=0.9375, down=-0.9375) for param in params]
+    normalize_scale = 0
+    for i in range(bits-1):
+        normalize_scale += 1/(2**(i+1))
+    
+    # param_list = [rescale_linear_params(param.get_value(),-1*normalize_scale ,1*normalize_scale) for param in params]
+    param_list = [param.get_value() for param in params]
+
     _param_list_result = []
     _decoded_params = []
-    for param in param_list:
-        _param_result = quantitatize_layer(param)
-        _param_list_result.append(_param_result)
-
-    for param in _param_list_result:
-        _param_result = dequantitatize_layer(param)
-        _decoded_params.append(_param_result)
-
     decoded_params_output = []
-    for decod_i in _decoded_params:
-        array = np.array(decod_i).astype(np.float32)
-        decoded_params_output.append(array)
+    # for param in param_list:
+    #     _param_result = quantitatize_layer(param)
+    #     _param_list_result.append(_param_result)
+
+    # for param in _param_list_result:
+    #     _param_result = dequantitatize_layer(param)
+    #     _decoded_params.append(_param_result)
+
+    min_v_list = np.array([])
+    max_v_list = np.array([])
+    for param in param_list:
+        max_v_list = np.append(max_v_list, np.amax(param))
+        min_v_list = np.append(min_v_list, np.amin(param))
+
+    max_v = np.max(max_v_list)
+    min_v = np.min(min_v_list)
+    print("max in w,b by layers: ", max_v)
+    print("min in w,b by layers: ", min_v)
+
+    for param in param_list:
+        _param_result = quantize_linear_params(param, bits, max_v, min_v)
+        decoded_params_output.append(_param_result)
+    # for param in param_list:
+        
+    #     _param_result = quantize_linear_params(param, bits)
+    #     decoded_params_output.append(_param_result)
+
+    # for decod_i in _decoded_params:
+    #     array = np.array(decod_i).astype(np.float32)
+    #     decoded_params_output.append(array)
 
     # quantitation of weights
     # weights = [quantitatize_layer(param_list[0])]
@@ -177,8 +236,8 @@ def save_data_shared(filename, params, columns):
     # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
     # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
-    np.savetxt('params.csv', _param_list_result, fmt='%s', delimiter='')
-    np.savetxt('param_decoded.csv', _decoded_params,
+    np.savetxt('params.csv', param_list, fmt='%s', delimiter='')
+    np.savetxt('param_decoded.csv', decoded_params_output,
                fmt='%s', delimiter='')
     return decoded_params_output
 
@@ -189,13 +248,11 @@ def quantitatize_layer(params):
     _params_result = []
     if len(params.shape) > 2:  # normally for Conv
         for neuron in params:  # in one kernel
-            # print("neuron: ", neuron)
             _neuron_result = []
             for ele in neuron:
                 _ele_result = []
                 for C in ele:
                     _C_result = []
-                    # C = normalize_params(C, 1, -1)
                     for index in range(len(C)):
                         _C_q = C[index]
                         float_result = float_bin(_C_q)
@@ -208,7 +265,6 @@ def quantitatize_layer(params):
         _params_result = []
         for C in params:
             _C_result = []
-            # C = normalize_params(C, 1, -1)
             for index in range(len(C)):
                 _C_q = C[index]
                 float_result = float_bin(_C_q)
@@ -216,14 +272,6 @@ def quantitatize_layer(params):
             _params_result.append(_C_result)
     else:  # normally for bias
         _params_result = []
-        # params = normalize_params(params, 1, -1)
-
-        # abs_normalize = np.amax(params)
-        # normalize_factor = 1
-        # if abs_normalize <= 0.9375:
-            # normalize_factor = 1
-        # else:
-            # normalize_factor = 1/abs_normalize*0.9375 
         for index in range(len(params)):
             _param_q = params[index]
             float_result = float_bin(_param_q)
@@ -455,16 +503,16 @@ class Network(object):
             [i], cost_train, updates=updates,
             givens={
                 self.x:
-                    normalize_input(training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size], upper=1,down=-1),
+                    training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
                 self.y:
-                training_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+                    training_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
         validate_mb_accuracy = theano.function(
             [i], self.layers[-1].accuracy(self.y),
             givens={
                 self.x:
-                normalize_input(validation_x[i *
-                             self.mini_batch_size: (i+1)*self.mini_batch_size],1,-1),
+                validation_x[i *
+                             self.mini_batch_size: (i+1)*self.mini_batch_size],
                 self.y:
                 validation_y[i *
                              self.mini_batch_size: (i+1)*self.mini_batch_size]
@@ -474,11 +522,13 @@ class Network(object):
             [i], [self.layers[0].inpt],
             givens={
                 self.x:
-                    normalize_input(test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]),
+                    test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
             },
         )
         
-        # output_L0 = np.array(vis_layer(0))
+        input_L0 = np.array(vis_layer(0))
+        print("max in input image: ", np.amax(input_L0))
+        print("min in input image: ", np.amin(input_L0))
         # result = np.array(test_x[0:self.mini_batch_size].eval())
         # result = np.reshape(result, (10,28,28))
         # np.savetxt('normalized_output_L0.csv', output_L0[0][4][0], fmt='%s', delimiter='  ')
@@ -487,8 +537,6 @@ class Network(object):
 
 
         # Do the actual training
-        best_validation_accuracy = 0.0
-        best_iteration = 0
         for epoch in range(epochs):
             cost_list_local = np.array([0])
             accuracy_list_local = np.array([0])
@@ -505,10 +553,7 @@ class Network(object):
                         [validate_mb_accuracy(j) for j in range(num_validation_batches)])
                     print("Epoch {0}: validation accuracy {1:.2%}".format(
                         epoch, validation_accuracy))
-                    if validation_accuracy >= best_validation_accuracy:
-                        print("This is the best validation accuracy to date.")
-                        best_validation_accuracy = validation_accuracy
-                        best_iteration = iteration
+
                     accuracy_list_local = np.append(
                         accuracy_list_local, validation_accuracy)
 
@@ -522,30 +567,27 @@ class Network(object):
             self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
 
             # encode and decode the params
-            self.decoded_params = save_data_shared(
-                "params.csv", self.params, self.columns)
-            self.reset_params(scan_range=len(self.params)+4)
+            # self.decoded_params = save_data_shared(
+            #     "params.csv", self.params, self.columns)
+            # self.reset_params(scan_range=len(self.params)+4)
 
 
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
-            best_validation_accuracy, best_iteration))
-        # print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
-
-        # test_accuracy = self.test_network(test_data, num_test_batches)
+            validation_accuracy, iteration))
 
         print("self.accuracy_list: ", self.accuracy_list)
 
-        return self.accuracy_list[-1], self.cost_list[-1], self.decoded_params
+        return self.accuracy_list[-1], self.cost_list[-1], self.params, self.columns
 
 
 ### suggest to create an individual network2 class definition
     def test_network(self, test_data, mini_batch_size):
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
-        num_test_batches = int(size(test_data)/mini_batch_size)
+        num_test_batches = int(size(test_data)/mini_batch_size/10)
         test_mb_accuracy = theano.function(
-            [i], self.layers[-1].accuracy(self.y),
+            [i], self.layers[-1].accuracy(self.y), 
             givens={
                 self.x:
                     test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
