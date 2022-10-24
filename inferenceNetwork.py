@@ -370,7 +370,7 @@ class Inference_Network(object):
     def normal_test_network(self, test_data, mini_batch_size):
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
-        num_test_batches = int(size(test_data)/mini_batch_size)
+        num_test_batches = int(size(test_data)/mini_batch_size/10)
         test_mb_accuracy = theano.function(
             [i], self.layers[-1].accuracy(self.y),
             givens={
@@ -395,6 +395,7 @@ class Inference_Network(object):
             })
 
         if test_data:
+
             test_accuracy = np.mean(
                 [test_mb_accuracy(j) for j in range(num_test_batches)])
             print('corresponding test accuracy is {0:.2%}'.format(

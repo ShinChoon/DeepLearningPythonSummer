@@ -124,16 +124,23 @@ def decimal_converter(num):
         num /= 10
     return num
 
-def quantize_linear_params(array, bits, max_v, min_v):
+def quantize_linear_theano(array, bits, max_v, min_v):
+    """
+    Theano
+    no need to do binary transformation
+    """
+    
+    resolution = float((max_v-min_v)/(2**(bits)))
+    result = resolution*T.round(array/resolution)
+    return result
+
+def quantize_linear_params(array, bits, min_v, max_v):
     """
     no need to do binary transformation
     """
-
-    
     resolution = (max_v-min_v)/(2**(bits))
     result = resolution*np.round(array/resolution)
     return result
-
 
 def quantize_linear_output(array, bits):
     """
@@ -146,14 +153,43 @@ def quantize_linear_output(array, bits):
     result = resolution*np.round(array/resolution)
     return result
 
+def rescale_linear_theano(array, max_v, min_v, down, upper):
+    """Rescale an arrary linearly."""
+    result = (upper - down)*(array - min_v)/(max_v-min_v) + (down)
+    return result
+    
+def rescale_linear_weights_bias(array, min_v, max_v, down, upper):
+    """Rescale an arrary linearly."""
+    result = (upper - down)*(array - min_v)/(max_v-min_v) + (down)
+    return result
+
 def rescale_linear_params(array, down, upper):
     """Rescale an arrary linearly."""
     result = (upper - down)*(array - np.min(array))/(np.max(array)-np.min(array)) + down
     return result
 
+def rescale_linear_params2(array, down, upper):
+    """Rescale an arrary linearly."""
+    result = array/np.sqrt(np.sum(np.square(array)))
+    return result
+
 def rescale_linear_input(array, down, upper):
     """Rescale an arrary linearly."""
-    result = (upper - down)*(array - T.min(array))/(T.max(array)-T.min(array)) + down
+    result = float(upper - down)*(array - T.min(array))/(T.max(array)-T.min(array)) + float(down)
+    return result
+
+
+def rescale_linear_input2(array):
+    """Rescale an arrary linearly."""
+    # if array.ndim==4:
+    #     W_axes_to_sum = (1,2,3)
+    #     W_dimshuffle_args = [0,'x','x','x']
+    # else:
+    #     W_dimshuffle_args = ['x',0]
+    W_axes_to_sum = 0
+    result = array / T.sqrt(T.sum(T.sqr(array), axis=W_axes_to_sum, keepdims=True))
+
+    # result = array *( g/T.sqrt(T.sum(T.sqr(array), axis=W_axes_to_sum))).dimshuffle(*W_dimshuffle_args)
     return result
 
 def save_data_shared(filename, params, columns, bits=5):
@@ -164,7 +200,6 @@ def save_data_shared(filename, params, columns, bits=5):
     for i in range(bits-1):
         normalize_scale += 1/(2**(i+1))
     
-    # param_list = [rescale_linear_params(param.get_value(),-1*normalize_scale ,1*normalize_scale) for param in params]
     param_list = [param.get_value() for param in params]
 
     _param_list_result = []
@@ -186,11 +221,12 @@ def save_data_shared(filename, params, columns, bits=5):
 
     max_v = np.max(max_v_list)
     min_v = np.min(min_v_list)
-    print("max in w,b by layers: ", max_v)
-    print("min in w,b by layers: ", min_v)
+    print("@@@@max_v: ", max_v)
+    print("@@@@min_v: ", min_v)
 
     for param in param_list:
-        _param_result = quantize_linear_params(param, bits, max_v, min_v)
+        # param = rescale_linear_params(param, -1 , 1)
+        _param_result = quantize_linear_params(param, bits, min_v, max_v)
         decoded_params_output.append(_param_result)
     # for param in param_list:
         
@@ -492,9 +528,15 @@ class Network(object):
         # need to make grads integer
         grads = T.grad(cost_train, self.params)
         # need to make eta as resolution of quantitation
-        updates = [(param, param-eta*grad)
+
+        # flatten_params = T.flatten(self.params, ndim=1)
+        # max_v = T.max(flatten_params, axis=0)
+        # min_v = T.min(flatten_params, axis=0)
+        updates = [(param, rescale_linear_input2(param-eta*grad))
                    for param, grad in zip(self.params, grads)]
 
+        # updates = [(param, param-eta*grad)
+                #    for param, grad in zip(self.params, grads)]
 
         # define functions to train a mini-batch, and to compute the
         # accuracy in validation and test mini-batches.
@@ -582,12 +624,16 @@ class Network(object):
 
 
 ### suggest to create an individual network2 class definition
-    def test_network(self, test_data, mini_batch_size):
+    def test_network(self, test_data, mini_batch_size, quantized=False):
         i = T.lscalar()  # mini-batch index
+        if quantized:
+            updates = [(param, 0.03125*T.round(param/0.03125))for param in self.params]
+        else:
+            updates = [(param, param) for param in self.params]
         test_x, test_y = test_data
         num_test_batches = int(size(test_data)/mini_batch_size/10)
         test_mb_accuracy = theano.function(
-            [i], self.layers[-1].accuracy(self.y), 
+            [i], self.layers[-1].accuracy(self.y), updates=updates,
             givens={
                 self.x:
                     test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
