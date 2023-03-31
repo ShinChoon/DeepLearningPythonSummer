@@ -1,4 +1,5 @@
-from turtle import width
+from sre_constants import RANGE
+from turtle import width, ycor
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -12,6 +13,7 @@ image_shape = []
 
 x_axis = np.arange(0, 32, 1)
 y_axis = np.arange(0, 36, 1)
+columns_n = 0
 
 
 
@@ -43,6 +45,10 @@ class Conv_image(object):
         self.ylim = 36 * 1
         self.output_scale = image_shape[0] - self.conv_scale + 1
 
+        mask = np.array([(x+i,y+h)for y in range(28) for x in range(28) for i in range(3) for h in range(3)])                       
+        self.kernels_list = mask.reshape(784,9,2)
+        print(self.kernels_list[0])
+
     def __str__(self) -> str:
         """
         built in
@@ -57,7 +63,7 @@ class Conv_image(object):
         :param start the location of the first element in a kernel
         return array of kernel
         """
-        if start[0] <= 28 and start[1] <=28:
+        if start[0] <= 27 and start[1] <=27:
             return np.array([(start[0]+h, start[1]+i)for h in range(self.conv_scale) for i in range(self.conv_scale)])
         else:
             return None
@@ -73,14 +79,14 @@ class Conv_image(object):
         return coordinates with 36x32 and ticks, ax objects
         """
         # Major ticks every 20, minor ticks every 5
-        major_x_ticks = np.arange(self.xlim* self.window_drift, 
+        self.major_x_ticks = np.arange(self.xlim* self.window_drift, 
                                     (1+self.window_drift)*self.xlim, 4)
-        minor_x_ticks = np.arange(self.xlim* self.window_drift, 
+        self.minor_x_ticks = np.arange(self.xlim* self.window_drift, 
                                     (1+self.window_drift)*self.xlim, 1)
 
-        major_y_ticks = np.arange((self.ylim-(self.ylim-self.xlim) * self.conv_scale)*self.window_drift,
+        self.major_y_ticks = np.arange((self.ylim-(self.ylim-self.xlim) * self.conv_scale)*self.window_drift,
                                   (1+self.window_drift)*self.ylim - (self.ylim-self.xlim) * self.conv_scale*self.window_drift, 4)
-        minor_y_ticks = np.arange((self.ylim-(self.ylim-self.xlim) * self.conv_scale)*self.window_drift,
+        self.minor_y_ticks = np.arange((self.ylim-(self.ylim-self.xlim) * self.conv_scale)*self.window_drift,
                                   (1+self.window_drift)*self.ylim - (self.ylim-self.xlim) * self.conv_scale*self.window_drift, 1)
 
         self._ax.set_xlim([self.window_drift*self.xlim,
@@ -88,11 +94,12 @@ class Conv_image(object):
 
         self._ax.set_ylim([(self.ylim-(self.ylim-self.xlim) * self.conv_scale)*self.window_drift,
                           (1+self.window_drift)*self.ylim-(self.ylim-self.xlim) * self.conv_scale*self.window_drift])
-        self._ax.set_xticks(major_x_ticks)
-        self._ax.set_xticks(minor_x_ticks, minor=True)
-        self._ax.set_yticks(major_y_ticks)
-        self._ax.set_yticks(minor_y_ticks, minor=True)
+        self._ax.set_xticks(self.major_x_ticks)
+        self._ax.set_xticks(self.minor_x_ticks, minor=True)
+        self._ax.set_yticks(self.major_y_ticks)
+        self._ax.set_yticks(self.minor_y_ticks, minor=True)
         self._ax.grid(which='both')
+
 
     def decide_scan_num(self):
         """
@@ -101,6 +108,7 @@ class Conv_image(object):
         column_num = int((self.ylim/(self.inch_num*self.conv_scale)-self.conv_scale))+1
         row_num = int(self.xlim/self.out_num)
         return min(column_num, row_num)
+
 
     def draw_weights(self, xmin, xwidth, ymin, 
                     yheight, colors=[0, 0, 0]):
@@ -114,7 +122,6 @@ class Conv_image(object):
                        (ymin, yheight), facecolors=colors)
 
 
-
     def draw_image(self):
         """
         main process to draw the image
@@ -122,33 +129,84 @@ class Conv_image(object):
         """
         # And a corresponding grid
         #modify ax and fig
+        jump_next = False
+        global columns_n
         self.initialize_image()
         scan_num = self.decide_scan_num()   #scan_num is how many times a bundle of mapping can be mapped
         # point to the upper left corner of kernel
-        locations = self.image_array[scan_num * self.window_drift:scan_num*(1+self.window_drift)]
+        locations = self.image_array[scan_num*self.window_drift:scan_num*(1+self.window_drift)]
+        t_duplicates = 0
+        columns_n = 0
         for h in range(len(locations)):  # for each scanning time, map a bundle of kernels
             kernel =  self.kernel_shape(locations[h])   #create 1*n**2 array of kenel mapping
             if kernel is not None:
-                kernel = np.repeat(kernel, self.inch_num, axis=0)   # repeat the element by input channels 
-                self.draw_weights_text(kernel, h, scan_num)
-            
-    def draw_weights_text(self, kernel, h, scan_num):
-        for i in range(int(self.out_num)):  # by output channels along x direction
-            each_loc = (kernel[0])*self.out_num   # decide the start location of mapping 1*n**2 without drift in y direction
-            each_loc[0] = self.window_drift*self.xlim + h*self.out_num
-            each_loc[0] +=i # drift the location along x axis by the output channels
-            drift = (self.window_drift*scan_num+h)*self.inch_num * self.conv_scale  # drift along y axis,
-            
-            self.draw_weights(xmin=each_loc,
-                                xwidth=1,
-                                ymin=drift,
-                                yheight=self.inch_num * self.conv_scale**2,
-                                colors=[(1 * i/self.out_num, i/self.out_num**2, 1-1*i/self.out_num)])
-            
-            for i in range(self.inch_num*self.conv_scale**2):
-                self._ax.text(each_loc[0]+0.25, drift+i+0.25,
-                                '{}_{}'.format(kernel[i][0], kernel[i][1]), 
-                                fontsize='xx-small') 
+                print(" has kernel")
+                kernel = np.repeat(kernel, self.inch_num, axis=0)   # repeat the element by input channels
+                self.draw_text(kernel, t_duplicates, jump_next=False)
+                self.draw_weights_pattern(kernel, h, scan_num, jump_next=False, _columns_n=columns_n)
+                t_duplicates += 1
+            else:
+                print(" has no kernel")
+                columns_n += 1
+                h += 2
+                locations = self.image_array[scan_num*self.window_drift:scan_num*(1+self.window_drift)+1]
+                kernel =  self.kernel_shape(locations[h])                
+                kernel = np.repeat(kernel, self.inch_num, axis=0)   # repeat the element by input channels
+                self.draw_text(kernel, t_duplicates, jump_next=True)
+                self.draw_weights_pattern(kernel, h, scan_num, jump_next=True, _columns_n=columns_n)
+                t_duplicates += 1
+
+
+    def draw_text(self, kernel, t_duplicates, jump_next=False):
+        drift = (self.ylim-(self.ylim-self.xlim) * self.conv_scale)*self.window_drift
+        for h in self.minor_x_ticks:
+            if t_duplicates == 0:
+                ## in the begining
+                    for d in range(self.inch_num):
+                        for i in range(self.conv_scale**2):
+                            self._ax.text(h+0.25, i+0.25+drift,
+                                            '{}_{}'.format(kernel[i][0], kernel[i][1]), 
+                                            fontsize='xx-small')
+            else:
+                if not jump_next:
+                    ## next turns
+                    for d in range(self.inch_num):
+                        for i in range(self.conv_scale*2, self.conv_scale**2, 1):
+                            self._ax.text(h+0.25, i+0.25+self.conv_scale*self.inch_num+(t_duplicates-1)*3+drift,
+                                            '{}_{}'.format(kernel[i][0], kernel[i][1]), 
+                                            fontsize='xx-small')
+
+                else:
+                    for d in range(self.inch_num):
+                        for i in range(0, self.conv_scale**2, 1):
+                            self._ax.text(h+0.25, i+0.25+self.conv_scale*self.inch_num+(t_duplicates+1)*3+drift,
+                                            '{}_{}'.format(kernel[i][0], kernel[i][1]), 
+                                            fontsize='xx-small')
+
+    def draw_weights_pattern(self, kernel, h, scan_num, jump_next=False, _columns_n=0):
+        if not jump_next:
+            for i in range(int(self.out_num)):  # by output channels along x direction
+                each_loc = (kernel[0])*self.out_num   # decide the start location of mapping 1*n**2 without drift in y direction
+                each_loc[0] = self.window_drift*self.xlim + h*self.out_num
+                each_loc[0] +=i # drift the location along x axis by the output channels
+                drift = (self.window_drift*scan_num+h)*self.inch_num*self.conv_scale  # drift along y axis,
+
+                self.draw_weights(xmin=each_loc,
+                                    xwidth=1,
+                                    ymin=drift+self.conv_scale*columns_n,
+                                    yheight=self.inch_num*self.conv_scale**2,
+                                    colors=[(1*i/self.out_num, i/self.out_num**2, 1-1*i/self.out_num)])
+        else:
+            for i in range(int(self.out_num)):  # by output channels along x direction  
+                each_loc = (kernel[0])*self.out_num   # decide the start location of mapping 1*n**2 without drift in y direction    
+                each_loc[0] = self.window_drift*self.xlim + h*self.out_num
+                each_loc[0] +=i # drift the location along x axis by the output channels   
+                drift = (self.window_drift*scan_num+h)*self.inch_num*self.conv_scale  # drift along y axis, 
+                self.draw_weights(xmin=each_loc-self.out_num,    ## move back to previous empty location
+                                    xwidth=1,   
+                                    ymin=drift+self.conv_scale, 
+                                    yheight=self.inch_num*self.conv_scale**2,   
+                                    colors=[(1*i/self.out_num, i/self.out_num**2, 1-1*i/self.out_num)])
 
     
 
@@ -167,7 +225,6 @@ class Conv_image(object):
 if __name__ == '__main__':
     Conv1 = Conv_image(_fig=fig, _ax=ax, image_shape=[30,30],
                        inch_num=1, outch_num=4, conv_scale=3, 
-                       window_drift=3)
-    print("Conv1: ", Conv1)
+                       window_drift=5)
     Conv1.draw_image()
     Conv1.save_image("coordinate_IMC")

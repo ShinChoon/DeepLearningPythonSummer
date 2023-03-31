@@ -1,160 +1,14 @@
 #### Libraries
 # Standard library
-from theano.tensor.nnet import sigmoid
-import pickle
-import gzip
 # Third-party libraries
 import numpy as np
 import theano
 import theano.tensor as T
-from theano.tensor.nnet import conv2d
-from theano.tensor.nnet import softmax
-from theano.tensor import shared_randomstreams
-from theano.tensor.signal.pool import pool_2d
 from network3 import *
-
-
-def local_bin_float(reciv_str, _bits=5):
-    #remove decimal
-    digit_location = reciv_str.find('.')
-    if digit_location != -1:
-        clip_str = reciv_str[(digit_location+1):]
-        str_num = clip_str
-    else:
-        clip_str = reciv_str
-        str_num = clip_str[1:]
-    P_flag = False if reciv_str[0] == '1' else True
-    answer = 0
-    factor = 0
-    for i in str_num:
-        factor += 1
-        answer += float(int(i) * (1/(2**factor)))
-
-    factor = 0
-    if digit_location != -1:
-        reciv_str = reciv_str[1:digit_location]
-        reverse_num = reciv_str[::-1]
-        for i in reverse_num:
-            answer = answer + int(i) * 1 * 2**factor
-            factor = factor + 1
-
-    if not P_flag and answer != 0:
-        answer = -1 * answer
-
-    return answer
-
-
-def local_float_bin(number, places=5):
-    number = float(number)
-    if np.isnan(number):
-        number = 0
-    source = float("{:.4f}".format(number))
-    N_flag = True if source <= 0 else False
-    _number = source if source >= 0 else -1*source
-    whole, dec = str(source).split(".")
-    dec = int(dec)
-    whole = abs(int(whole))
-    dec = _number - int(whole)
-    res = bin(0).lstrip("0b")
-    if whole > 0:
-        #detect if any value more than 1
-        res = bin(whole).lstrip("0b") + "."
-    else:
-        res = bin(0).lstrip("0b")
-    for x in range(places-1):
-        answer = (decimal_converter(float(dec))) * 2
-        # Convert the decimal part
-        # to float 4-digit again
-        whole, _dec = str(answer).split(".")
-        if answer > 0:
-            dec = answer - int(whole)
-        else:
-            whole, _dec = str(0.0).split(".")
-        # Keep adding the integer parts
-        # receive to the result variable
-        res += whole
-    result = str(res)
-    if N_flag:
-        result = '1' + result
-    else:
-        result = '0' + result
-
-    return result
-
-
-def local_dequantitatize_layer(params, bits):
-    # params: one layer
-    #debug
-    params = np.array(params)
-    _params_result = []
-    if len(params.shape) > 2:  # normally for Conv
-        for neuron in params:  # in one kernel
-            _neuron_result = []
-            for ele in neuron:
-                _ele_result = []
-                for C in ele:
-                    _C_result = []
-                    for index in range(len(C)):
-                        float_result = local_bin_float(C[index], bits)
-                        _C_result.append(float_result)
-                    _ele_result.append(_C_result)
-                _neuron_result.append(_ele_result)
-            _params_result.append(_neuron_result)
-
-    elif len(params.shape) == 2:  # normally for MLP
-        _params_result = []
-        for C in params:
-            _C_result = []
-            for index in range(len(C)):
-                float_result = local_bin_float(C[index], bits)
-                _C_result.append(float_result)
-            _params_result.append(_C_result)
-
-    return np.array(_params_result)
-
-def local_quantitatize_layer(params, bits):
-    # params: one layer
-    #debug
-    # generate the normalization scale
-    normalize_scale = 0
-    for i in range(bits):
-        normalize_scale += 1/(2**(i+1))
-
-    params = np.array(params)
-    _params_result = []
-    if len(params.shape) > 2:  # normally for Conv
-        for neuron in params:  # in one kernel
-            _neuron_result = []
-            for ele in neuron:
-                _ele_result = []
-
-                for C in ele:
-                    _C_result = []
-                    for index in range(len(C)):
-                        _C_q = C[index]
-                        float_result = local_float_bin(_C_q, places=bits)
-                        _C_result.append(float_result)
-                    _ele_result.append(_C_result)
-                _neuron_result.append(_ele_result)
-            _params_result.append(_neuron_result)
-
-    elif len(params.shape) == 2:  # normally for MLP
-        _params_result = []
-        for C in params:
-            _C_result = []
-
-            for index in range(len(C)):
-                _C_q = C[index]
-                float_result = local_float_bin(_C_q, places=bits)
-                _C_result.append(float_result)
-            _params_result.append(_C_result)
-
-    return np.array(_params_result)
-
 
 class Inference_Network(object):
 
-    def __init__(self, plt, plt_enable, layers, mini_batch_size):
+    def __init__(self, layers, mini_batch_size):
         """Takes a list of `layers`, describing the network architecture, and
         a value for the `mini_batch_size` to be used during training
         by stochastic gradient descent.
@@ -162,8 +16,6 @@ class Inference_Network(object):
         """
         self.layers = layers
         self.mini_batch_size = mini_batch_size
-        self.plt = plt
-        self.plt_enable = plt_enable
 
         self.epoch_index = np.array([0])
         self.cost_list = np.array([0])
@@ -180,7 +32,6 @@ class Inference_Network(object):
         self.rows = []
         for layer in self.layers:
             if not layer.skip_paramterize():
-                layer.plt_enable = plt_enable
                 for param in layer.params:
                     self.params.append(param)
 
@@ -201,35 +52,23 @@ class Inference_Network(object):
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
 
-    def plot_image(self, index, data=[], name=''):
-        if self.plt_enable:
-            self.plt.figure(index)
-            self.plt.title('{}'.format(name))
-            # print("shape of data: {}".format(data.shape))
-            self.plt.imshow(np.reshape(
-                data[0],
-                (self.layers[index+1].image_shape[2],
-                 self.layers[index+1].image_shape[3])),
-                cmap='gray')
-            self.plt.show()
-
     def ADC_DAC(self, output, output_dropout, bits, normalize=False, bypass=False):
         if normalize:
             if len(output.shape) > 2:
                 ## Conv1/2
                 for i in range(len(output)):
                     for h in range(len(output[i])):
-                        output[i][h] = rescale_linear_params(
+                        output[i][h] = rescale_linear_output(
                         output[i][h], -1, 1)
 
                 for i in range(len(output_dropout)):
                     for h in range(len(output[i])):
-                        output_dropout[i][h] = rescale_linear_params(
+                        output_dropout[i][h] = rescale_linear_output(
                         output_dropout[i][h], -1, 1)
             else:
                 #FC1 FC2
-                output = rescale_linear_params(output, -1, 1)
-                output_dropout = rescale_linear_params(output_dropout, -1, 1)
+                output = rescale_linear_output(output, -1, 1)
+                output_dropout = rescale_linear_output(output_dropout, -1, 1)
 
 
             # print("output shape: ", output.shape)
@@ -260,13 +99,13 @@ class Inference_Network(object):
 
     def test_network(self, test_data, mini_batch_size, bits):
         num_test_batches = int(size(test_data)/mini_batch_size/10)
-        test_mb_accuracy = np.mean([self.quantization_test_batch(
-                                    test_data, _i, bits)
-                                    for _i in range(num_test_batches)])
+        test_mb_accuracy =self.quantization_test_batch(
+                                    test_data, 1, bits)
         
         print('corresponding test accuracy is {0:.2%} at output solution {1} bits'.format(
             test_mb_accuracy, bits))
         return test_mb_accuracy
+
 
 ### suggest to create an individual network2 class definition
     def quantization_test_batch(self, test_data, batch_index, quantized_bits):
@@ -279,33 +118,57 @@ class Inference_Network(object):
 
         init_layer.set_inpt(self.x, self.x, self.mini_batch_size)
         vis_layer = theano.function(
-            [i], [self.layers[_index].output, self.layers[_index].output_dropout],
+            [i], [self.layers[_index].output,
+                  self.layers[_index].output_dropout, 
+                  self.x],
             givens={
                 self.x:
                     test_x[i *
                             self.mini_batch_size: (i+1)*self.mini_batch_size],
             },
         )
+        print("batch_index: ", batch_index)
+        print("self.mini_batch_size: ", self.mini_batch_size)
+
 
         output_L0 = vis_layer(batch_index)
+        resize_image = np.reshape(output_L0[2][7], (28, 28))
+        np.savetxt('resize_image.csv',
+                   resize_image, fmt='%s', delimiter=', ')
 
 
         output_0 = output_L0[0]
         output_dropout_0 = output_L0[1]
 
-        # np.savetxt('original_conv1.csv',
-                #    output_L0[0][3][2], fmt='%s', delimiter=', ')
+        np.savetxt('original_conv1_0.csv',
+                   output_L0[0][7][0], fmt='%s', delimiter=', ')
+        
 
         _l0_output, _l0_output_dropout = self.ADC_DAC(output_0,
                                                       output_dropout_0, quantized_bits, normalize=False, bypass=False)
         
-        # np.savetxt('dequantized_conv1.csv',
-        #            _l0_output[3][2], fmt='%s', delimiter=', ')
+        np.savetxt('dequantized_conv1_0.csv',
+                   _l0_output[7][0], fmt='%s', delimiter=', ')
+        np.savetxt('dequantized_conv1_1.csv',
+                    _l0_output[7][1], fmt='%s', delimiter=', ')
+        np.savetxt('dequantized_conv1_2.csv',
+                    _l0_output[7][2], fmt='%s', delimiter=', ')
+        np.savetxt('dequantized_conv1_3.csv',
+                    _l0_output[7][3], fmt='%s', delimiter=', ')
+        
         #Pool 1
         self.layers[1].set_inpt(_l0_output,
                                 _l0_output_dropout, self.mini_batch_size)
         _data_l1_output = self.layers[1].output.eval()
         _data_l1_dropout = self.layers[1].output_dropout.eval()
+
+        # np.savetxt('pool1_0.csv',
+        #    _data_l1_output[7][0], fmt='%s', delimiter=', ')
+        
+        # np.savetxt('pool1_1.csv',
+        #    _data_l1_output[7][1], fmt='%s', delimiter=', ')
+        
+
         #Conv2
         self.layers[2].set_inpt(_data_l1_output,
                                 _data_l1_dropout, self.mini_batch_size)
@@ -314,13 +177,47 @@ class Inference_Network(object):
         _l2_output, _l2_output_dropout = self.ADC_DAC(_data_l2_output,
                                                       _data_l2_output_dropout, quantized_bits, normalize=False, bypass=False)
 
-        # np.savetxt('dequantized_conv2.csv',
-                #    output_L0[0][8][2], fmt='%s', delimiter=', ')
+        np.savetxt('dequantized_conv2_0.csv',
+                   _l2_output[7][0], fmt='%s', delimiter=', ')
+        
+        np.savetxt('dequantized_conv2_1.csv',
+                   _l2_output[7][1], fmt='%s', delimiter=', ')
+        
+        np.savetxt('dequantized_conv2_2.csv',
+                   _l2_output[7][2], fmt='%s', delimiter=', ')
+        
+        np.savetxt('dequantized_conv2_3.csv',
+                   _l2_output[7][3], fmt='%s', delimiter=', ')
+        
+        np.savetxt('dequantized_conv2_4.csv',
+                   _l2_output[7][4], fmt='%s', delimiter=', ')
+        
+        np.savetxt('dequantized_conv2_5.csv',
+                   _l2_output[7][5], fmt='%s', delimiter=', ')
+        
+        np.savetxt('dequantized_conv2_6.csv',
+                   _l2_output[7][6], fmt='%s', delimiter=', ')
+        
+        np.savetxt('dequantized_conv2_7.csv',
+                   _l2_output[7][7], fmt='%s', delimiter=', ')
+        
         #Pool 2
         self.layers[3].set_inpt(_l2_output,
                                 _l2_output_dropout, self.mini_batch_size)
         _data_l3_output = self.layers[3].output.eval()
         _data_l3_dropout = self.layers[3].output_dropout.eval()
+
+        # np.savetxt('pool2_0.csv',
+        #            _data_l3_output[7][0], fmt='%s', delimiter=', ')
+        
+        # np.savetxt('pool2_1.csv',
+        #            _data_l3_output[7][1], fmt='%s', delimiter=', ')
+        
+        # np.savetxt('pool2_2.csv',
+        #            _data_l3_output[7][2], fmt='%s', delimiter=', ')
+        
+        # np.savetxt('pool2_3.csv',
+        #            _data_l3_output[7][3], fmt='%s', delimiter=', ')
 
         #FC1
         self.layers[4].set_inpt(_data_l3_output,
@@ -328,16 +225,16 @@ class Inference_Network(object):
         _data_l4_output = self.layers[4].output.eval()
         _data_l4_dropout = self.layers[4].output_dropout.eval()
 
-        np.savetxt('original_fc1.csv',
-                   _data_l4_output, fmt='%s', delimiter=', ')
+        # np.savetxt('original_fc1.csv',
+                #    _data_l4_output, fmt='%s', delimiter=', ')
 
         _l4_output, _l4_output_dropout = self.ADC_DAC(
             _data_l4_output, _data_l4_dropout, quantized_bits,  normalize=False, bypass=False)
 
 
         # _l4_output = np.array(_l4_output)
-        np.savetxt('dequantized_fc1.csv',
-                   _l4_output, fmt='%s', delimiter=', ')
+        # np.savetxt('dequantized_fc1.csv',
+                #    _l4_output, fmt='%s', delimiter=', ')
 
         # probably no need to noralize the FC?
         #FC2
@@ -370,7 +267,7 @@ class Inference_Network(object):
     def normal_test_network(self, test_data, mini_batch_size):
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
-        num_test_batches = int(size(test_data)/mini_batch_size/10)
+        num_test_batches = int(size(test_data)/mini_batch_size)
         test_mb_accuracy = theano.function(
             [i], self.layers[-1].accuracy(self.y),
             givens={

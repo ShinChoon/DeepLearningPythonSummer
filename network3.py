@@ -4,7 +4,6 @@
 
 #### Libraries
 # Standard library
-from imp import C_EXTENSION
 from theano.tensor.nnet import sigmoid, relu
 from theano.tensor import tanh
 import pickle
@@ -124,43 +123,27 @@ def decimal_converter(num):
         num /= 10
     return num
 
-def quantize_linear_theano(array, bits, max_v, min_v):
-    """
-    Theano
-    no need to do binary transformation
-    """
-    
-    resolution = float((max_v-min_v)/(2**(bits)))
-    result = resolution*T.round(array/resolution)
-    return result
-
 def quantize_linear_params(array, bits, min_v, max_v):
     """
     no need to do binary transformation
+    2bits for sign, rest for the absolute
+    default absolute vary from 0 to 1
+    e.g.00  000000
+    but in python, we just assume it as 8bits
     """
-    resolution = (max_v-min_v)/(2**(bits))
+    base = (2**(6)-1)/(2**6)
+    np.clip(array, -1*base, base, out=array)
+    resolution = (1)/(2**(6)) # resolution = 1/2**6 = 0.015625
     result = resolution*np.round(array/resolution)
     return result
 
 def quantize_linear_output(array, bits):
     """
-    no need to do binary transformation
     """
-    max_v = np.amax(array)
-    min_v = np.amin(array)
-
-    resolution = (max_v-min_v)/(2**(bits))
+    base = (2**(6)-1)/(2**4)
+    np.clip(array, 0, base, out=array)
+    resolution = (1)/(2**2)
     result = resolution*np.round(array/resolution)
-    return result
-
-def rescale_linear_theano(array, max_v, min_v, down, upper):
-    """Rescale an arrary linearly."""
-    result = (upper - down)*(array - min_v)/(max_v-min_v) + (down)
-    return result
-    
-def rescale_linear_weights_bias(array, min_v, max_v, down, upper):
-    """Rescale an arrary linearly."""
-    result = (upper - down)*(array - min_v)/(max_v-min_v) + (down)
     return result
 
 def rescale_linear_params(array, down, upper):
@@ -168,31 +151,23 @@ def rescale_linear_params(array, down, upper):
     result = (upper - down)*(array - np.min(array))/(np.max(array)-np.min(array)) + down
     return result
 
-def rescale_linear_params2(array, down, upper):
+
+def rescale_linear_output(array, down, upper):
     """Rescale an arrary linearly."""
-    result = array/np.sqrt(np.sum(np.square(array)))
+    result = (upper - down)*(array - np.min(array))/(np.max(array)-np.min(array)) + down
     return result
 
-def rescale_linear_input(array, down, upper):
-    """Rescale an arrary linearly."""
-    result = float(upper - down)*(array - T.min(array))/(T.max(array)-T.min(array)) + float(down)
-    return result
-
-
-def rescale_linear_input2(array):
-    """Rescale an arrary linearly."""
-    # if array.ndim==4:
-    #     W_axes_to_sum = (1,2,3)
-    #     W_dimshuffle_args = [0,'x','x','x']
-    # else:
-    #     W_dimshuffle_args = ['x',0]
+def rescale_linear_training(array):
+    """
+    Rescale an arrary linearly. standard diviation
+    param array: input array, weights and bias as theano variable
+    return result: normalized array
+    """
     W_axes_to_sum = 0
     result = array / T.sqrt(T.sum(T.sqr(array), axis=W_axes_to_sum, keepdims=True))
-
-    # result = array *( g/T.sqrt(T.sum(T.sqr(array), axis=W_axes_to_sum))).dimshuffle(*W_dimshuffle_args)
     return result
 
-def save_data_shared(filename, params, columns, bits=5):
+def save_data_shared(filename, params, columns, bits=6):
     """
     Below 3 lines are the step to save it as readable csv
     """
@@ -449,7 +424,7 @@ def normalize_params(data, upper=1, down=0):
     return result
 class Network(object):
 
-    def __init__(self, plt, plt_enable, layers, mini_batch_size):
+    def __init__(self, layers, mini_batch_size):
         """Takes a list of `layers`, describing the network architecture, and
         a value for the `mini_batch_size` to be used during training
         by stochastic gradient descent.
@@ -457,7 +432,6 @@ class Network(object):
         """
         self.layers = layers
         self.mini_batch_size = mini_batch_size
-        self.plt = plt
 
         self.epoch_index = np.array([0])
         self.cost_list = np.array([0])
@@ -474,7 +448,6 @@ class Network(object):
         self.rows = []
         for layer in self.layers:
             if not layer.skip_paramterize():
-                layer.plt_enable = plt_enable
                 for param in layer.params:
                     self.params.append(param)
 
@@ -494,15 +467,6 @@ class Network(object):
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
 
-    def plot_image(self, index, data=[], name=''):
-        self.plt.figure(index)
-        self.plt.title('{}'.format(name))
-        self.plt.imshow(np.reshape(
-            data[0],
-            (self.layers[index+1].image_shape[2],
-             self.layers[index+1].image_shape[3])),
-            cmap='gray')
-        self.plt.show()
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
             validation_data, test_data, lmbda=0.0):
@@ -532,7 +496,7 @@ class Network(object):
         # flatten_params = T.flatten(self.params, ndim=1)
         # max_v = T.max(flatten_params, axis=0)
         # min_v = T.min(flatten_params, axis=0)
-        updates = [(param, rescale_linear_input2(param-eta*grad))
+        updates = [(param, rescale_linear_training(param-eta*grad))
                    for param, grad in zip(self.params, grads)]
 
         # updates = [(param, param-eta*grad)
@@ -560,17 +524,17 @@ class Network(object):
                              self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
 
-        vis_layer = theano.function(
-            [i], [self.layers[0].inpt],
-            givens={
-                self.x:
-                    test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
-            },
-        )
+        # vis_layer = theano.function(
+        #     [i], [self.layers[0].inpt],
+        #     givens={
+        #         self.x:
+        #             test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+        #     },
+        # )
         
-        input_L0 = np.array(vis_layer(0))
-        print("max in input image: ", np.amax(input_L0))
-        print("min in input image: ", np.amin(input_L0))
+        # input_L0 = np.array(vis_layer(0))
+        # print("max in input image: ", np.amax(input_L0))
+        # print("min in input image: ", np.amin(input_L0))
         # result = np.array(test_x[0:self.mini_batch_size].eval())
         # result = np.reshape(result, (10,28,28))
         # np.savetxt('normalized_output_L0.csv', output_L0[0][4][0], fmt='%s', delimiter='  ')
@@ -609,9 +573,9 @@ class Network(object):
             self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
 
             # encode and decode the params
-            # self.decoded_params = save_data_shared(
-            #     "params.csv", self.params, self.columns)
-            # self.reset_params(scan_range=len(self.params)+4)
+            self.decoded_params = save_data_shared(
+                "params.csv", self.params, self.columns)
+            self.reset_params(scan_range=len(self.params)+4)
 
 
         print("Finished training network.")
@@ -706,7 +670,7 @@ class ConvLayer(object):
 
     """
 
-    def __init__(self, plt, plt_enable, filter_shape, image_shape, poolsize=(2, 2),
+    def __init__(self, filter_shape, image_shape, poolsize=(2, 2),
                  activation_fn=sigmoid, border_mode='valid'):
         """`filter_shape` is a tuple of length 4, whose entries are the number
         of filters, the number of input feature maps, the filter height, and the
@@ -726,13 +690,9 @@ class ConvLayer(object):
         self.activation_fn = activation_fn
         self.border_mode = border_mode
 
-        self.plt = plt
-        self.plt_enable = plt_enable
-
+        self.row = self.image_shape[1]*filter_shape[2]*filter_shape[3]
         self.column = self.filter_shape[0]
-        self.row = self.image_shape[1]
-        self.occupation = self.column * self.row * \
-            filter_shape[2] * filter_shape[3]/(36*32)
+        self.occupation = self.column*self.row/(36*32)
 
         print("Conv rows: ", self.row)
         print("Conv columns: ", self.column)
@@ -761,14 +721,6 @@ class ConvLayer(object):
 
     def __str__(self):
         return f'ConvLayer(Object)'
-
-
-    def plot_image(self, index, data=[], name=''):
-        if self.plt_enable:
-            self.plt.figure(index)
-            self.plt.title('{}'.format(name))
-            self.plt.imshow(np.reshape(data, (self.image_shape[2], self.image_shape[3])), cmap='gray')
-            self.plt.show()
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape(self.image_shape)
@@ -851,15 +803,13 @@ class PoolLayer(object):
     
 class FullyConnectedLayer(object):
 
-    def __init__(self, plt, plt_enable, image_shape, n_out, activation_fn=sigmoid, p_dropout=0.0):
+    def __init__(self, image_shape, n_out, activation_fn=sigmoid, p_dropout=0.0):
         self.image_shape = image_shape
         self.n_in = image_shape[1]*image_shape[2]*image_shape[3]
         self.n_out = n_out
         self.p_dropout = p_dropout
         self.activation_fn = activation_fn
 
-        self.plt = plt
-        self.plt_enable = plt_enable
 
         print("n_in: {}, n_out:{}".format(self.n_in, self.n_out))
         self.occupation = self.n_in * self.n_out / (36*32)
@@ -878,14 +828,6 @@ class FullyConnectedLayer(object):
 
     def __str__(self):
         return f'FullyConnectedLayer(Object)'
-
-    def plot_image(self, index, data=[], name=''):
-        if self.plt_enable:
-            self.plt.figure(index)
-            self.plt.title('{}'.format(name))
-            self.plt.imshow(np.reshape(
-                data, (self.n_in, self.n_out)), cmap='gray')
-            self.plt.show()
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
@@ -916,7 +858,7 @@ class FullyConnectedLayer(object):
 
 class SoftmaxLayer(object):
 
-    def __init__(self, plt, plt_enable, image_shape, n_out, p_dropout=0.0):
+    def __init__(self, image_shape, n_out, p_dropout=0.0):
         self.image_shape = image_shape
         self.n_in = image_shape[1]*image_shape[2]*image_shape[3]        
         self.n_out = n_out
@@ -935,14 +877,6 @@ class SoftmaxLayer(object):
 
     def __str__(self):
         return f'SofmaxLayer(Object)'
-
-    def plot_image(self, index, data=[], name=''):
-        if self.plt_enable:
-            self.plt.figure(index)
-            self.plt.title('{}'.format(name))
-            self.plt.imshow(np.reshape(
-                data, (self.n_in, self.n_out)), cmap='gray')
-            self.plt.show()
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))

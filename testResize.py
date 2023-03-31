@@ -37,7 +37,7 @@ def resize_images(data):
     _result = [[],[]]
     for h in data[0]:
         _reshaped = np.reshape(h, (28, 28))
-        _padded = np.pad(_reshaped, (2, 2))
+        _padded = np.pad(_reshaped, (1, 1))
         _result[0].append(_padded.flatten())
     _result[1] = data[1]
     return _result
@@ -45,17 +45,18 @@ def resize_images(data):
 _new_set = resize_images(test_data)
 
 
-def plot_image(index, data=[], image_shape=(30,30), name=''):
-    plt.figure(index)
-    plt.title('{}: {}'.format(name, data[1][0]))
-    plt.imshow(np.reshape(data[0][0], image_shape), cmap='gray')
-    plt.show()
+# def plot_image(index, data=[], image_shape=(30,30), name=''):
+#     plt.figure(index)
+#     plt.title('{}: {}'.format(name, data[1][0]))
+#     plt.imshow(np.reshape(data[0][0], image_shape), cmap='gray')
+#     plt.show()
 
 
-plot_image(1, test_data, image_shape=(28,28), name="Initial image")
+# plot_image(1, test_data, image_shape=(28,28), name="Initial image")
 
-plot_image(2, _new_set, image_shape=(32, 32), name="After padding")
+# plot_image(2, _new_set, image_shape=(32, 32), name="After padding")
+_reshaped = np.reshape(_new_set[0][0], (30,30))#[0][0] is the picture with number 7
+print(np.shape(_reshaped))
 
-
-
+print(_reshaped)
 

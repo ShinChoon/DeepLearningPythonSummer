@@ -1,13 +1,14 @@
 # -*- coding: UTF-8 -*-
 # softmax plus log-likelihood cost is more common in modern image classification networks.
 from network3 import Network, ConvLayer, PoolLayer, FullyConnectedLayer,  SoftmaxLayer, save_data_shared
-from network3 import relu, sigmoid, tanh
+from network3 import relu, sigmoid, tanh, ReLU
 from inferenceNetwork import Inference_Network
 import matplotlib.ticker as mtick
 import matplotlib.pyplot as plt
 import numpy as np
 import network3
 from draw_IMC import Draw_IMC
+
 
 
 # ----------------------
@@ -18,7 +19,7 @@ train_accuracylist = []
 quantized_test_accuracylist = []
 full_test_accuracylist = []
 cost_list = []
-epoch_index = 12
+epoch_index = 1
 epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
 
 # read data:
@@ -26,7 +27,7 @@ training_data, validation_data, test_data = network3.load_data_shared()
 # mini-batch size:
 mini_batch_size = 10
 # bits start value
-bits_start = 2
+bits_start = 8
 # 8 X 8
 # number of nuerons in Conv1
 CHNLIn = 1
@@ -88,126 +89,127 @@ filter_shape6 = (i_f_map[5][2], i_f_map[5][3], conv_scale, conv_scale)
 image_shape7 = (mini_batch_size, i_f_map[5][3], i_f_map[6][0], i_f_map[6][1])
 filter_shape7 = (i_f_map[6][2], i_f_map[6][3], conv_scale, conv_scale)
 
-def training_network():
+class CNN_compiler(object):
+    def __init__(self):
+        """
+        create models for training network
+        """
 
-    """
-    create models for training network
-    """
-
-    Conv1 = ConvLayer(plt, plt_enable=False, image_shape=image_shape1,
-                      filter_shape=filter_shape1,
-                      poolsize=(pool_scale, pool_scale),
-                      activation_fn=relu, border_mode='half')
-
-    Pool1 = PoolLayer(image_shape=image_shape2,
-                      filter_shape=filter_shape2,
-                      poolsize=(pool_scale, pool_scale),
-                      activation_fn=relu, _params=Conv1.params)
-
-    Conv2 = ConvLayer(plt, plt_enable=False, image_shape=image_shape3,
-                      filter_shape=filter_shape3,
-                      poolsize=(pool_scale, pool_scale),
-                      activation_fn=relu, border_mode='valid')
-
-    Pool2 = PoolLayer(image_shape=image_shape4,
-                      filter_shape=filter_shape4,
-                      poolsize=(pool_scale, pool_scale),
-                      activation_fn=relu, _params=Conv2.params)
-
-    Conv3 = ConvLayer(plt, plt_enable=False, image_shape=image_shape5,
-                      filter_shape=filter_shape5,
-                      poolsize=(pool_scale, pool_scale),
-                      activation_fn=relu, border_mode='half')
-
-    MLP1 = FullyConnectedLayer(plt, plt_enable=False, image_shape=image_shape6, n_out=i_f_map[5][-1],
-                               activation_fn=relu, p_dropout=0.5)
-
-    MLP2 = FullyConnectedLayer(plt, plt_enable=False, image_shape=image_shape7,
-                                n_out=i_f_map[6][3], activation_fn=relu, p_dropout=0.5)
-
-    SMLayer = SoftmaxLayer(plt, plt_enable=False, image_shape=image_shape7,
-                           n_out=i_f_map[6][3])
-
-    net = Network(plt, plt_enable=False,
-                            layers=[
-                    Conv1,
-                    Pool1,
-                    Conv2,
-                    Pool2,
-                    MLP1,
-                    SMLayer
-                    ], 
-                mini_batch_size=mini_batch_size)
-            
-
-    accuracy_trained, cost, _params, columns = net.SGD(training_data=training_data, epochs=10, 
-                                                mini_batch_size=mini_batch_size, 
-                                                eta=0.03, validation_data=validation_data, 
-                                                test_data=test_data, lmbda=0.1)
-    
-
-
-    return accuracy_trained, cost, _params, columns
-
-
-
-
-def full_quantized_test_network(bits, _params, columns):
-    """
-    params bits: for changing bits for quantization of output by layers 
-    params _params: weights and bias by layers 
-    """
-    Conv1 = ConvLayer(plt, plt_enable=False, image_shape=image_shape1,
+        Conv1 = ConvLayer(image_shape=image_shape1,
                         filter_shape=filter_shape1,
                         poolsize=(pool_scale, pool_scale),
-                        activation_fn=relu, border_mode='half')
+                        activation_fn=ReLU, border_mode='half')
 
-    Pool1 = PoolLayer(image_shape=image_shape2,
+        Pool1 = PoolLayer(image_shape=image_shape2,
                         filter_shape=filter_shape2,
                         poolsize=(pool_scale, pool_scale),
-                        activation_fn=relu, _params=Conv1.params)
+                        activation_fn=ReLU, _params=Conv1.params)
 
-    Conv2 = ConvLayer(plt, plt_enable=False, image_shape=image_shape3,
+        Conv2 = ConvLayer(image_shape=image_shape3,
                         filter_shape=filter_shape3,
                         poolsize=(pool_scale, pool_scale),
-                        activation_fn=relu, border_mode='valid')
+                        activation_fn=ReLU, border_mode='valid')
 
-    Pool2 = PoolLayer(image_shape=image_shape4,
+        Pool2 = PoolLayer(image_shape=image_shape4,
                         filter_shape=filter_shape4,
                         poolsize=(pool_scale, pool_scale),
-                        activation_fn=relu, _params=Conv2.params)
+                        activation_fn=ReLU, _params=Conv2.params)
 
-    MLP1 = FullyConnectedLayer(plt, plt_enable=False, image_shape=image_shape6, n_out=i_f_map[5][-1],
-                                activation_fn=relu, p_dropout=0.5)
+        Conv3 = ConvLayer(image_shape=image_shape5,
+                        filter_shape=filter_shape5,
+                        poolsize=(pool_scale, pool_scale),
+                        activation_fn=ReLU, border_mode='half')
 
-    MLP2 = FullyConnectedLayer(plt, plt_enable=False, image_shape=image_shape7,
-                                n_out=i_f_map[6][3], activation_fn=relu, p_dropout=0.5)
-    net2 = Inference_Network(
-                            plt,
-                            plt_enable=True,
-                            layers=[
-                            Conv1,
-                            Pool1,
-                            Conv2,
-                            Pool2,
-                            MLP1,
-                            MLP2  # FC
-                            ], 
-                            mini_batch_size=mini_batch_size)
+        MLP1 = FullyConnectedLayer(image_shape=image_shape6, n_out=i_f_map[5][-1],
+                                activation_fn=ReLU, p_dropout=0.5)
 
-    params_list = [param.get_value() for param in _params]
-    net2.reset_params(params_list, scan_range=len(_params)+4)
-    full_test_accuracy = net2.normal_test_network(test_data, mini_batch_size)
-    print("@@@@@@full_test_accuracy from net2: {:.2%}".format(full_test_accuracy))
-    
-    decoded_params = save_data_shared("params.csv", _params, columns) 
-    
-    net2.reset_params(decoded_params, scan_range=len(_params)+4)
-    quantized_test_accuracy = net2.test_network(test_data,mini_batch_size,bits)
-    print("quantized_test_accuracy from net2: {:.2%}".format(quantized_test_accuracy))
-    usage_ratio = net2.occupation_list
+        MLP2 = FullyConnectedLayer(image_shape=image_shape7,
+                                    n_out=i_f_map[6][3], activation_fn=ReLU, p_dropout=0.5)
 
-    return full_test_accuracy, quantized_test_accuracy, usage_ratio
+        SMLayer = SoftmaxLayer(image_shape=image_shape7,
+                            n_out=i_f_map[6][3])
+
+        self.net = Network(layers=[
+                        Conv1,
+                        Pool1,
+                        Conv2,
+                        Pool2,
+                        MLP1,
+                        SMLayer
+                        ], 
+                    mini_batch_size=mini_batch_size)
+
+
+
+    def training_network(self):
+        accuracy_trained, cost, _params, columns = self.net.SGD(training_data=training_data, epochs=30, 
+                                                    mini_batch_size=mini_batch_size, 
+                                                    eta=0.03, validation_data=validation_data, 
+                                                    test_data=test_data, lmbda=0.1)
+
+
+
+        return accuracy_trained, cost, _params, columns
+
+
+class CNN_simulator(object):
+    def __init__(self):
+        """
+        params bits: for changing bits for quantization of output by layers 
+        params _params: weights and bias by layers 
+        """
+        Conv1 = ConvLayer(image_shape=image_shape1,
+                            filter_shape=filter_shape1,
+                            poolsize=(pool_scale, pool_scale),
+                            activation_fn=ReLU, border_mode='half')
+
+        Pool1 = PoolLayer(image_shape=image_shape2,
+                            filter_shape=filter_shape2,
+                            poolsize=(pool_scale, pool_scale),
+                            activation_fn=ReLU, _params=Conv1.params)
+
+        Conv2 = ConvLayer(image_shape=image_shape3,
+                            filter_shape=filter_shape3,
+                            poolsize=(pool_scale, pool_scale),
+                            activation_fn=ReLU, border_mode='valid')
+
+        Pool2 = PoolLayer(image_shape=image_shape4,
+                            filter_shape=filter_shape4,
+                            poolsize=(pool_scale, pool_scale),
+                            activation_fn=ReLU, _params=Conv2.params)
+
+        MLP1 = FullyConnectedLayer(image_shape=image_shape6, n_out=i_f_map[5][-1],
+                                    activation_fn=ReLU, p_dropout=0.5)
+
+        MLP2 = FullyConnectedLayer(image_shape=image_shape7,
+                                    n_out=i_f_map[6][3], activation_fn=ReLU, p_dropout=0.5)
+        self.net = Inference_Network(
+                                layers=[
+                                Conv1,
+                                Pool1,
+                                Conv2,
+                                Pool2,
+                                MLP1,
+                                MLP2  # FC
+                                ], 
+                                mini_batch_size=mini_batch_size)
+
+    def raw_test_network(self, _params):
+        params_list = [param.get_value() for param in _params]
+        self.net.reset_params(params_list, scan_range=len(_params)+4)
+        full_test_accuracy = self.net.normal_test_network(test_data, mini_batch_size)
+        print("full_test_accuracy from self.net: {:.2%}".format(full_test_accuracy))
+        return full_test_accuracy
+
+
+    def quantized_test_network(self, bits, _params, columns):
+        decoded_params = save_data_shared("params.csv", _params, columns) 
+        self.net.reset_params(decoded_params, scan_range=len(_params)+4)
+        quantized_test_accuracy = self.net.test_network(test_data,mini_batch_size,bits)
+        print("quantized_test_accuracy from self.net: {:.2%}".format(quantized_test_accuracy))
+        usage_ratio = self.net.occupation_list
+
+        return quantized_test_accuracy, usage_ratio
  
 
 def plot_n(indexlists, valuelists, labellist):
@@ -243,13 +245,13 @@ def plot_n(indexlists, valuelists, labellist):
 
 
 if __name__ == '__main__':
-
+    compiler = CNN_compiler()
+    accuracy_trained, cost, _params, columns = compiler.training_network()
     for i in range(epoch_index):
-        accuracy_trained, cost, _params, columns = training_network()
-        full_test_accuracy,quantized_test_accuracy, usage_ratio = full_quantized_test_network(5, _params, columns)
-        # quantized_test_accuracy, usage_ratio = quantized_test_network(
-            # bits=5, _params=_params, columns=colu
-            # mns)
+        simulator = CNN_simulator()
+        full_test_accuracy = simulator.raw_test_network(_params)
+        quantized_test_accuracy, usage_ratio = simulator.quantized_test_network(6, _params, columns)
+
         train_accuracylist.append(accuracy_trained)
         full_test_accuracylist.append(full_test_accuracy)
         quantized_test_accuracylist.append(quantized_test_accuracy)
