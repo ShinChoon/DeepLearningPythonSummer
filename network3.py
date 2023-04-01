@@ -8,6 +8,7 @@ from theano.tensor.nnet import sigmoid, relu
 from theano.tensor import tanh
 import pickle
 import gzip
+import sys
 # Third-party libraries
 import numpy as np
 import theano
@@ -247,10 +248,11 @@ def save_data_shared(filename, params, columns, bits=6):
     # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
     # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
+    np.set_printoptions(threshold=sys.maxsize)
     np.savetxt('params.csv', param_list, fmt='%s', delimiter='')
     np.savetxt('param_decoded.csv', decoded_params_output,
                fmt='%s', delimiter='')
-    return decoded_params_output
+    return param_list
 
 def quantitatize_layer(params):
     # params: one layer
