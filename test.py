@@ -7,6 +7,7 @@ import matplotlib.ticker as mtick
 import matplotlib.pyplot as plt
 import numpy as np
 import network3
+import pandas as pd
 from draw_IMC import Draw_IMC
 
 
@@ -195,16 +196,16 @@ class CNN_simulator(object):
                                 mini_batch_size=mini_batch_size)
 
     def raw_test_network(self, _params):
-        params_list = [param.get_value() for param in _params]
+        params_list = _params
         self.net.reset_params(params_list, scan_range=len(_params)+4)
         full_test_accuracy = self.net.normal_test_network(test_data, mini_batch_size)
         print("full_test_accuracy from self.net: {:.2%}".format(full_test_accuracy))
         return full_test_accuracy
 
 
-    def quantized_test_network(self, bits, _params, columns):
-        decoded_params = save_data_shared("params.csv", _params, columns) 
-        self.net.reset_params(decoded_params, scan_range=len(_params)+4)
+    def quantized_test_network(self, bits, _params):
+        # decoded_params = save_data_shared("params.csv", _params, columns) 
+        self.net.reset_params(_params, scan_range=len(_params)+4)
         quantized_test_accuracy = self.net.test_network(test_data,mini_batch_size,bits)
         print("quantized_test_accuracy from self.net: {:.2%}".format(quantized_test_accuracy))
         usage_ratio = self.net.occupation_list
@@ -244,18 +245,223 @@ def plot_n(indexlists, valuelists, labellist):
     plt.show()  # display
 
 
+def float_bin(number, places=2):
+    """
+    convert the float result into binary string
+    e.g. 0.5->"01 000000"
+    param number: float number
+    param palces: number of bits
+    return int8_t number
+    """
+    if np.isnan(number):
+        number = 0
+    # # define max and min range
+    # if number > (2**2-1)/2**2:
+    #     number = (2**2-1)/2**2
+    # if number < -1 * (2**2-1)/2**2:
+    #     number = -1 * (2**2-1)/2**2
+    # source = float("{:.5f}".format(number))
+    # result = float_to_int8(source, places=places)
+    if number > (2**6-1)/2**6:
+        number = (2**6-1)/2**6
+    if number < -1 * (2**6-1)/2**6:
+        number = -1 * (2**6-1)/2**6
+    resolution = 2**(-6)  # corresponding to python
+    result = round(number/resolution)
+    return result
+
+
+def convert_float_int8(number, isweights):
+    answer_in = 0
+    if isweights:
+        if number > (2**(8-2)-1)/2**6:
+            number = (2**(8-2)-1)/2**6
+        if number < -1 * (2**(8-2)-1)/2**6:
+            number = -1 * (2**(8-2)-1)/2**6
+
+        resolution = 2**(-8+2)  # sign bits by 2 + value range by 4
+        answer_in = abs(round(number/resolution))
+        if(number > 0):
+            answer_in = answer_in + 64
+        if(number < 0):
+            answer_in = answer_in + 128
+    else:
+        if number > (2**6-1)/2**6:
+            number = (2**6-1)/2**6
+        if number < -1 * (2**6-1)/2**6:
+            number = -1 * (2**6-1)/2**6
+        resolution = 2**(-6)  # corresponding to python
+        answer_in = abs(round(number/resolution))
+    return answer_in
+
+
+def converstring_int_list(nu_array):
+    num_array = np.array(nu_array)
+    num_array = num_array.astype(np.float32)
+    return num_array
+
+
+def remove_enpty_space(_list):
+    w22 = []
+    for ele in _list:
+        if ele.strip():
+            w22.append(ele)
+    return w22
+
+
+def param_extraction():
+    rainfall = pd.read_csv('param_decoded.csv', sep=',', header=None)
+    sized_data = rainfall
+
+    smessage = sized_data.values
+    params = []
+    weights_1 = []
+    weights_map_1 = []
+
+    bias_1 = []
+    bias_map_1 = []
+
+    weights_2 = []
+    sub_weights_map = []
+    weights_map_2 = []
+
+    bias_2 = []
+    bias_map_2 = []
+
+    w_fc1_group = []
+    weights_fc1 = []
+    bias_fc_1 = []
+
+    w_fc2_group = []
+    weights_fc2 = []
+    bias_fc_2 = []
+
+    counter = 0
+
+    for i in range(0, 12):
+        w = smessage[i][0].split(']')
+        w = w[0].split('[')
+        ww = remove_enpty_space(w)
+        ww = ww[0].split(' ')
+        ww = remove_enpty_space(ww)
+
+        weights_1.append(ww)
+
+        if((i+1) % 3 == 0) and (i > 0):
+            weights_map_1.append([weights_1])
+            weights_1 = []
+
+    weights_map_1 = converstring_int_list(weights_map_1)
+    print("weights_map_1: ", np.shape(weights_map_1))
+    # prolog
+    params.append(weights_map_1)
+
+    b = smessage[12][0].split(']')
+    b = b[0].split('[')
+    bb = remove_enpty_space(b)
+    bb = bb[0].split(' ')
+    bias_1 = remove_enpty_space(bb)
+    bias_map_1 = converstring_int_list(bias_1)
+    params.append(bias_map_1)
+
+    for i in range(13, 109):
+        w = smessage[i][0].split(']')
+        w = w[0].split('[')
+        ww = remove_enpty_space(w)
+        ww = ww[0].split(' ')
+        ww = remove_enpty_space(ww)
+
+        weights_2.append(ww)
+
+    weights_map_2 = np.reshape(weights_2, (8, 4, 3, 3))
+    weights_map_2 = converstring_int_list(weights_map_2)
+    params.append(weights_map_2)
+
+    for i in range(109, 111):
+        b = smessage[i][0].split(']')
+        b = b[0].split('[')
+        bb = remove_enpty_space(b)
+        bb = bb[0].split(' ')
+        bb = remove_enpty_space(bb)
+        for ele in bb:
+            bias_2.append(ele)
+
+    bias_map_2 = converstring_int_list(bias_2)
+    params.append(bias_map_2)
+
+    for index in range(288):
+        weights_fc1 = []
+        for i in range(111+index*5, 116+index*5):
+            w = smessage[i][0].split(']')
+            w = w[0].split('[')
+            ww = remove_enpty_space(w)
+            ww = ww[0].split(' ')
+            ww = remove_enpty_space(ww)
+            for ele in ww:
+                weights_fc1.append(ele)
+
+        w_fc1_group.append(weights_fc1)
+
+
+    w_fc1_group = converstring_int_list(w_fc1_group)
+    params.append(w_fc1_group)
+
+    for i in range(1551, 1556):
+        b = smessage[i][0].split(']')
+        b = b[0].split('[')
+        bb = remove_enpty_space(b)
+        bb = bb[0].split(' ')
+        bb = remove_enpty_space(bb)
+        for ele in bb:
+            bias_fc_1.append(ele)
+
+    bias_fc_1 = converstring_int_list(bias_fc_1)
+    params.append(bias_fc_1)
+
+    for index in range(32):
+        weights_fc2 = []
+        for i in range(1556+index*2, 1558+index*2):
+            w = smessage[i][0].split(']')
+            w = w[0].split('[')
+            ww = remove_enpty_space(w)
+            ww = ww[0].split(' ')
+            ww = remove_enpty_space(ww)
+            for ele in ww:
+                weights_fc2.append(ele)
+
+        w_fc2_group.append(weights_fc2)
+    w_fc2_group = converstring_int_list(w_fc2_group)
+    params.append(w_fc2_group)
+
+    for i in range(1619, 1621):
+        # print("smessage[i][0]: ", smessage[i][0])
+        b = smessage[i][0].split(']')
+        b = b[0].split('[')
+        bb = remove_enpty_space(b)
+        bb = bb[0].split(' ')
+        bb = remove_enpty_space(bb)
+        for ele in bb:
+            bias_fc_2.append(ele)
+
+    bias_fc_2 = converstring_int_list(bias_fc_2)
+    params.append(bias_fc_2)
+
+    return params
+
+
 if __name__ == '__main__':
-    compiler = CNN_compiler()
-    accuracy_trained, cost, _params, columns = compiler.training_network()
+    # compiler = CNN_compiler()
+    # accuracy_trained, cost, _params, columns = compiler.training_network()
+    _params = param_extraction()
     for i in range(epoch_index):
         simulator = CNN_simulator()
         full_test_accuracy = simulator.raw_test_network(_params)
-        quantized_test_accuracy, usage_ratio = simulator.quantized_test_network(6, _params, columns)
+        quantized_test_accuracy, usage_ratio = simulator.quantized_test_network(6, _params)
 
-        train_accuracylist.append(accuracy_trained)
+        # train_accuracylist.append(accuracy_trained)
         full_test_accuracylist.append(full_test_accuracy)
         quantized_test_accuracylist.append(quantized_test_accuracy)
-        cost_list.append(cost)
+        # cost_list.append(cost)
         print("Now i = ", i)
 
     print("DeepLearning:")
@@ -266,11 +472,9 @@ if __name__ == '__main__':
     print("quantized_test_accuracylist= ", ['{:.2%}'.format(i) 
         for i in quantized_test_accuracylist])
 
-    print("cost_list= ", cost_list)
 
-
-    plot_n([epoch_indexs+bits_start, epoch_indexs], [train_accuracylist, full_test_accuracylist, quantized_test_accuracylist,
-           cost_list], ["trained accuracy","full test accuracy", "quantized test accuracy", "cost in training"])
+    # plot_n([epoch_indexs+bits_start, epoch_indexs], [train_accuracylist, full_test_accuracylist, quantized_test_accuracylist], 
+        #    ["trained accuracy","full test accuracy", "quantized test accuracy"])
 
     # model = Draw_IMC(total_channels=[1, 4, 8], input_sizes=[30, 14],
     #                  MLP_ports=[i_f_map[-2], i_f_map[-1]])

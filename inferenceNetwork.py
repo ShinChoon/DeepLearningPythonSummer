@@ -148,13 +148,13 @@ class Inference_Network(object):
                                                       output_dropout_0, quantized_bits, normalize=False, bypass=False)
         
         np.savetxt('dequantized_conv1_0.csv',
-                   _l0_output[7][0], fmt='%s', delimiter=', ')
+                   _l0_output[1][0], fmt='%s', delimiter=', ')
         np.savetxt('dequantized_conv1_1.csv',
-                    _l0_output[7][1], fmt='%s', delimiter=', ')
+                    _l0_output[1][1], fmt='%s', delimiter=', ')
         np.savetxt('dequantized_conv1_2.csv',
-                    _l0_output[7][2], fmt='%s', delimiter=', ')
+                    _l0_output[1][2], fmt='%s', delimiter=', ')
         np.savetxt('dequantized_conv1_3.csv',
-                    _l0_output[7][3], fmt='%s', delimiter=', ')
+                    _l0_output[1][3], fmt='%s', delimiter=', ')
         
         #Pool 1
         self.layers[1].set_inpt(_l0_output,
@@ -178,28 +178,28 @@ class Inference_Network(object):
                                                       _data_l2_output_dropout, quantized_bits, normalize=False, bypass=False)
 
         np.savetxt('dequantized_conv2_0.csv',
-                   _l2_output[7][0], fmt='%s', delimiter=', ')
+                   _l2_output[1][0], fmt='%s', delimiter=', ')
         
         np.savetxt('dequantized_conv2_1.csv',
-                   _l2_output[7][1], fmt='%s', delimiter=', ')
+                   _l2_output[1][1], fmt='%s', delimiter=', ')
         
         np.savetxt('dequantized_conv2_2.csv',
-                   _l2_output[7][2], fmt='%s', delimiter=', ')
+                   _l2_output[1][2], fmt='%s', delimiter=', ')
         
         np.savetxt('dequantized_conv2_3.csv',
-                   _l2_output[7][3], fmt='%s', delimiter=', ')
+                   _l2_output[1][3], fmt='%s', delimiter=', ')
         
         np.savetxt('dequantized_conv2_4.csv',
-                   _l2_output[7][4], fmt='%s', delimiter=', ')
+                   _l2_output[1][4], fmt='%s', delimiter=', ')
         
         np.savetxt('dequantized_conv2_5.csv',
-                   _l2_output[7][5], fmt='%s', delimiter=', ')
+                   _l2_output[1][5], fmt='%s', delimiter=', ')
         
         np.savetxt('dequantized_conv2_6.csv',
-                   _l2_output[7][6], fmt='%s', delimiter=', ')
+                   _l2_output[1][6], fmt='%s', delimiter=', ')
         
         np.savetxt('dequantized_conv2_7.csv',
-                   _l2_output[7][7], fmt='%s', delimiter=', ')
+                   _l2_output[1][7], fmt='%s', delimiter=', ')
         
         #Pool 2
         self.layers[3].set_inpt(_l2_output,
@@ -233,8 +233,8 @@ class Inference_Network(object):
 
 
         # _l4_output = np.array(_l4_output)
-        # np.savetxt('dequantized_fc1.csv',
-                #    _l4_output, fmt='%s', delimiter=', ')
+        np.savetxt('dequantized_fc1.csv',
+                   _l4_output, fmt='%s', delimiter=', ')
 
         # probably no need to noralize the FC?
         #FC2
@@ -243,8 +243,8 @@ class Inference_Network(object):
         _data_l5_output = self.layers[5].output.eval()
         _data_l5_dropout = self.layers[5].output_dropout.eval()
 
-        np.savetxt('original_fc2.csv',
-                   _data_l5_output, fmt='%s', delimiter=', ')
+        # np.savetxt('original_fc2.csv',
+                #    _data_l5_output, fmt='%s', delimiter=', ')
 
         _l5_output, _l5_output_dropout = self.ADC_DAC(
             _data_l5_output, _data_l5_dropout, quantized_bits,  normalize=False, bypass=False)
@@ -310,14 +310,11 @@ class Inference_Network(object):
             if index % 2 == 0:
                 if not self.layers[int(index/2)].skip_paramterize():
                     decode_index = decode_index + 1
-                    array_w = np.array(self.layers[int(index/2)].w.get_value())
                     self.layers[int(
                         index/2)].w.set_value(_params[decode_index])
 
             else:
                 if not self.layers[int((index-1)/2)].skip_paramterize():
                     decode_index = decode_index + 1
-                    array_b = np.array(
-                        self.layers[int((index-1)/2)].b.get_value())
                     self.layers[int((index-1)/2)
                                 ].b.set_value(_params[decode_index])
