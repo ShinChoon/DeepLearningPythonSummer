@@ -99,8 +99,8 @@ class Inference_Network(object):
 
     def test_network(self, test_data, mini_batch_size, bits):
         num_test_batches = int(size(test_data)/mini_batch_size/10)
-        test_mb_accuracy =self.quantization_test_batch(
-                                    test_data, 1, bits)
+        test_mb_accuracy = np.mean([self.quantization_test_batch(
+                                    test_data, j, bits) for j in range(1,2,1)])
         
         print('corresponding test accuracy is {0:.2%} at output solution {1} bits'.format(
             test_mb_accuracy, bits))
@@ -141,20 +141,21 @@ class Inference_Network(object):
         output_dropout_0 = output_L0[1]
 
         np.savetxt('original_conv1_0.csv',
-                   output_L0[0][7][0], fmt='%s', delimiter=', ')
+                   output_L0[0][1][0], fmt='%s', delimiter=', ')
         
 
         _l0_output, _l0_output_dropout = self.ADC_DAC(output_0,
                                                       output_dropout_0, quantized_bits, normalize=False, bypass=False)
         
+        output0 = np.int_(_l0_output * 64)
         np.savetxt('dequantized_conv1_0.csv',
-                   _l0_output[1][0], fmt='%s', delimiter=', ')
+                   output0[1][0], fmt='%s', delimiter=' ')
         np.savetxt('dequantized_conv1_1.csv',
-                    _l0_output[1][1], fmt='%s', delimiter=', ')
+                   output0[1][1], fmt='%s', delimiter=' ')
         np.savetxt('dequantized_conv1_2.csv',
-                    _l0_output[1][2], fmt='%s', delimiter=', ')
+                   output0[1][2], fmt='%s', delimiter=' ')
         np.savetxt('dequantized_conv1_3.csv',
-                    _l0_output[1][3], fmt='%s', delimiter=', ')
+                   output0[1][3], fmt='%s', delimiter=' ')
         
         #Pool 1
         self.layers[1].set_inpt(_l0_output,
@@ -177,29 +178,30 @@ class Inference_Network(object):
         _l2_output, _l2_output_dropout = self.ADC_DAC(_data_l2_output,
                                                       _data_l2_output_dropout, quantized_bits, normalize=False, bypass=False)
 
+        output2 = np.int_(_l2_output * 64)
         np.savetxt('dequantized_conv2_0.csv',
-                   _l2_output[1][0], fmt='%s', delimiter=', ')
+                   output2[1][0], fmt='%s', delimiter=' ')
         
         np.savetxt('dequantized_conv2_1.csv',
-                   _l2_output[1][1], fmt='%s', delimiter=', ')
+                   output2[1][1], fmt='%s', delimiter=' ')
         
         np.savetxt('dequantized_conv2_2.csv',
-                   _l2_output[1][2], fmt='%s', delimiter=', ')
+                   output2[1][2], fmt='%s', delimiter=' ')
         
         np.savetxt('dequantized_conv2_3.csv',
-                   _l2_output[1][3], fmt='%s', delimiter=', ')
+                   output2[1][3], fmt='%s', delimiter=' ')
         
         np.savetxt('dequantized_conv2_4.csv',
-                   _l2_output[1][4], fmt='%s', delimiter=', ')
+                   output2[1][4], fmt='%s', delimiter=' ')
         
         np.savetxt('dequantized_conv2_5.csv',
-                   _l2_output[1][5], fmt='%s', delimiter=', ')
+                   output2[1][5], fmt='%s', delimiter=' ')
         
         np.savetxt('dequantized_conv2_6.csv',
-                   _l2_output[1][6], fmt='%s', delimiter=', ')
+                   output2[1][6], fmt='%s', delimiter=' ')
         
         np.savetxt('dequantized_conv2_7.csv',
-                   _l2_output[1][7], fmt='%s', delimiter=', ')
+                   output2[1][7], fmt='%s', delimiter=' ')
         
         #Pool 2
         self.layers[3].set_inpt(_l2_output,
@@ -231,10 +233,9 @@ class Inference_Network(object):
         _l4_output, _l4_output_dropout = self.ADC_DAC(
             _data_l4_output, _data_l4_dropout, quantized_bits,  normalize=False, bypass=False)
 
-
-        # _l4_output = np.array(_l4_output)
+        output4 = np.int_(_l4_output * 64)
         np.savetxt('dequantized_fc1.csv',
-                   _l4_output, fmt='%s', delimiter=', ')
+                   output4, fmt='%s', delimiter=' ')
 
         # probably no need to noralize the FC?
         #FC2
@@ -250,8 +251,9 @@ class Inference_Network(object):
             _data_l5_output, _data_l5_dropout, quantized_bits,  normalize=False, bypass=False)
         # probably no need to noralize the FC?
 
+        output5 = np.int_(_l5_output * 64)
         np.savetxt('dequantized_fc2.csv',
-                   _l5_output, fmt='%s', delimiter=', ')
+                   output5, fmt='%s', delimiter=' ')
         accuray_fn = theano.function(
             [i], T.mean(T.eq(self.y, T.argmax(_l5_output, axis=1))),
             givens={

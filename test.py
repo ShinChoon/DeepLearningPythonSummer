@@ -20,15 +20,15 @@ train_accuracylist = []
 quantized_test_accuracylist = []
 full_test_accuracylist = []
 cost_list = []
-epoch_index = 1
+epoch_index = 10
 epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
+# bits start value
+bits_start = 2
 
 # read data:
 training_data, validation_data, test_data = network3.load_data_shared()
 # mini-batch size:
 mini_batch_size = 10
-# bits start value
-bits_start = 8
 # 8 X 8
 # number of nuerons in Conv1
 CHNLIn = 1
@@ -220,28 +220,28 @@ def plot_n(indexlists, valuelists, labellist):
     params valuelists: list of values should be ploted
     params labellist: list of titles for each plot
     """
-    fig, axes = plt.subplots(2, 1)
+    fig, axes = plt.subplots(1, 1)
     ## for accuracy plot
     for ind in range(len(valuelists)-1):
-        axes[0].plot(indexlists[0], valuelists[ind],
+        axes.plot(indexlists[0], valuelists[ind],
                      'o-', label=labellist[ind])
-        axes[0].legend()
+        axes.legend()
         for i, j in zip(indexlists[0], valuelists[ind]):
-            axes[0].annotate('{:.2%}'.format(j), xy=(i, j))
-    axes[0].set_title("accuracy show 2-13 bits")
-    axes[0].set_xticks(np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
+            axes.annotate('{:.2%}'.format(j), xy=(i, j))
+    axes.set_title(
+        "training and full test by 10 times")
+    axes.set_xticks(np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
 
-    ## for cost plot
-    axes[1].plot(indexlists[0], valuelists[-1], "-.",
-                 label=labellist[-1])  # Plot the chart
-    axes[1].legend()
-    for i, j in zip(indexlists[0], valuelists[-1]):
-        axes[1].annotate('{:.3}'.format(j), xy=(i, j))
-    axes[1].set_title("cost show at 2-13 bits")
-    axes[1].set_xticks(
-        np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
-    # axes[1].label_outer()
-    fig.savefig("result_relu_theano_2_13_3.png")
+    # axes[1].plot(indexlists[0], valuelists[-1], "-.",
+    #              label=labellist[-1])  # Plot the chart
+    # axes[1].legend()
+    # for i, j in zip(indexlists[0], valuelists[-1]):
+    #     axes[1].annotate('{:.3}'.format(j), xy=(i, j))
+    # axes[1].set_title("quantized test with 10 samples per epoch")
+    # axes[1].set_xticks(
+    #     np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
+    
+    fig.savefig("theano_traing_fulltest.png")
     plt.show()  # display
 
 
@@ -450,15 +450,17 @@ def param_extraction():
 
 
 if __name__ == '__main__':
-    # compiler = CNN_compiler()
-    # accuracy_trained, cost, _params, columns = compiler.training_network()
-    _params = param_extraction()
     for i in range(epoch_index):
+        compiler = CNN_compiler()
+        accuracy_trained, cost, _params, columns = compiler.training_network()
+        _params = param_extraction()
+
         simulator = CNN_simulator()
         full_test_accuracy = simulator.raw_test_network(_params)
-        quantized_test_accuracy, usage_ratio = simulator.quantized_test_network(6, _params)
+        quantized_test_accuracy, usage_ratio = simulator.quantized_test_network(
+            i+bits_start, _params)
 
-        # train_accuracylist.append(accuracy_trained)
+        train_accuracylist.append(accuracy_trained)
         full_test_accuracylist.append(full_test_accuracy)
         quantized_test_accuracylist.append(quantized_test_accuracy)
         # cost_list.append(cost)
@@ -473,8 +475,8 @@ if __name__ == '__main__':
         for i in quantized_test_accuracylist])
 
 
-    # plot_n([epoch_indexs+bits_start, epoch_indexs], [train_accuracylist, full_test_accuracylist, quantized_test_accuracylist], 
-        #    ["trained accuracy","full test accuracy", "quantized test accuracy"])
+    plot_n([epoch_indexs+0, epoch_indexs], [train_accuracylist, full_test_accuracylist, quantized_test_accuracylist], 
+           ["trained accuracy","full test accuracy", "quantized test accuracy"])
 
     # model = Draw_IMC(total_channels=[1, 4, 8], input_sizes=[30, 14],
     #                  MLP_ports=[i_f_map[-2], i_f_map[-1]])

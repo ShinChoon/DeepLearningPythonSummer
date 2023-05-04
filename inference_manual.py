@@ -51,15 +51,11 @@ class ConvLayer(object):
                 dtype=theano.config.floatX),
             borrow=True)
 
-        # self.w = normal_initalization('w', filter_shape)
-
         self.b = theano.shared(
             np.asarray(
                 np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
                 dtype=theano.config.floatX),
             borrow=True)
-
-        # self.b = normal_initalization('b', (filter_shape[0],))
 
         self.params = [self.w, self.b]
 

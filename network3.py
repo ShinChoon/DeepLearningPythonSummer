@@ -43,7 +43,17 @@ else:
 
 
 def bin_float(reciv_str, _bits=5):
-    #remove decimal
+    """Converts a binary string to a floating-point number.
+
+    Args:
+        reciv_str (str): A string containing a binary number.
+        _bits (int): The number of bits in the binary representation that are used for the fractional part of the number.
+
+    Returns:
+        float: The floating-point representation of the binary number.
+
+    """
+    # Remove decimal point
     _bits -= 1
     digit_location = reciv_str.find('.')
     if digit_location != -1:
@@ -52,13 +62,17 @@ def bin_float(reciv_str, _bits=5):
     else:
         clip_str = reciv_str
         str_num = clip_str[1:]
+
+    # Determine the sign of the number
     P_flag = False if reciv_str[0] == '1' else True
+    # Compute the fractional part of the number
     answer = 0
     factor = 0
     for i in str_num:
         factor += 1
         answer += float(int(i) * (1/(2**factor)))
 
+    # Compute the integer part of the number, if applicable
     factor = 0
     if digit_location != -1:
         reciv_str = reciv_str[0:digit_location]
@@ -67,6 +81,7 @@ def bin_float(reciv_str, _bits=5):
             answer = answer + int(i) * 1 * 2**factor
             factor = factor + 1
 
+    # Negate the number if it is negative and not zero
     if not P_flag and answer != 0:
         answer = -1 * answer
 
@@ -74,33 +89,53 @@ def bin_float(reciv_str, _bits=5):
 
 
 def float_bin(number, places=5):
+    """Converts a floating-point number to a binary string.
+
+    Args:
+        number (float): The number to convert.
+        places (int): The number of bits to use for the fractional part of the binary representation.
+
+    Returns:
+        str: The binary string representation of the number.
+
+    """
+
+    # Handle NaN values
     if np.isnan(number):
         number = 0
-    source = float("{:.4f}".format(number))
+    
+    # Determine the sign of the number
     N_flag = True if source <= 0 else False
+
+    # Convert the number to a positive value for processing
+    source = float("{:.4f}".format(number))
     _number = source if source >= 0 else -1*source
+
+    # Split the number into its integer and fractional parts
     whole, dec = str(source).split(".")
     dec = int(dec)
     whole = int(whole)
+
+    # Compute the binary representation of the fraction part of the number
     dec = _number - int(whole)
     res = bin(0).lstrip("0b")
     if whole > 0:
-        #detect if any value more than 1
         res = bin(whole).lstrip("0b") + "."
     else:
         res = bin(0).lstrip("0b")
+
+    # Compute the binary representation of the fractional part of the number
     for x in range(places-1):
         answer = (decimal_converter(float(dec))) * 2
-        # Convert the decimal part
-        # to float 4-digit again
         whole, _dec = str(answer).split(".")
         if answer > 0:
             dec = answer - int(whole)
         else:
             whole, _dec = str(0.0).split(".")
-        # Keep adding the integer parts
-        # receive to the result variable
         res += whole
+
+
+    # Combine the integer and fractional parts of the binary representation
     result = str(res)
     if N_flag:
         result = '1' + result
@@ -110,40 +145,62 @@ def float_bin(number, places=5):
     return result
 
 
-def normal_initalization(_name, _shape):
-    array_factors = np.random.normal(loc=0, scale=0.013298, size=_shape)
-    array_limited = np.asarray(array_factors, dtype='int8') * 0.0625
-    array_limited_32 = np.asarray(array_limited, dtype=theano.config.floatX)
-    params = theano.shared(array_limited_32, name=_name, borrow=True)
-    return params
-
-
 def decimal_converter(num):
+    """Converts a decimal number to a value between 0 and 1.
+
+    Args:
+        num (float): The decimal number to convert.
+
+    Returns:
+        float: The converted value between 0 and 1.
+
+    """
     while num > 1:
-        # print("num: ", num)
         num /= 10
     return num
 
-def quantize_linear_params(array, bits, min_v, max_v):
+def quantize_linear_params(array, bits):
+    """Quantizes an array of linear parameters.
+
+    Args:
+        array (np.ndarray): The array to quantize.
+        bits (int): The number of bits to use for quantization.
+
+    Returns:
+        np.ndarray: The quantized array.
+
     """
-    no need to do binary transformation
-    2bits for sign, rest for the absolute
-    default absolute vary from 0 to 1
-    e.g.00  000000
-    but in python, we just assume it as 8bits
-    """
-    base = (2**(6)-1)/(2**6)
+    # Calculate the base value for quantization
+    base = (2**(bits)-1)/(2**bits)
+    # Clip the array to the quantization range
     np.clip(array, -1*base, base, out=array)
-    resolution = (1)/(2**(6)) # resolution = 1/2**6 = 0.015625
+    # Calculate the resolution of the quantization
+    resolution = (1)/(2**(bits))  # resolution = 1/2**6 = 0.015625
+    # Quantize the array
     result = resolution*np.round(array/resolution)
     return result
 
 def quantize_linear_output(array, bits):
+    """Quantizes an array of linear output values.
+
+    Args:
+        array (np.ndarray): The array to quantize.
+        bits (int): The number of bits to use for quantization.
+
+    Returns:
+        np.ndarray: The quantized array.
+
     """
-    """
-    base = (2**(6)-1)/(2**4)
+    # Calculate the base value for quantization
+    base = (2**(bits)-1)/(2**(bits-2))
+
+    # Clip the array to the quantization range
     np.clip(array, 0, base, out=array)
-    resolution = (1)/(2**2)
+
+    # Calculate the resolution of the quantization
+    resolution = base/(2**(bits-2))
+    
+    # Quantize the array
     result = resolution*np.round(array/resolution)
     return result
 
@@ -709,15 +766,11 @@ class ConvLayer(object):
                 dtype=theano.config.floatX),
             borrow=True)
 
-        # self.w = normal_initalization('w', filter_shape)
-
         self.b = theano.shared(
             np.asarray(
                 np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
                 dtype=theano.config.floatX),
             borrow=True)
-
-        # self.b = normal_initalization('b', (filter_shape[0],))
 
         self.params = [self.w, self.b]
 
