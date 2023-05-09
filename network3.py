@@ -205,76 +205,72 @@ def quantize_linear_output(array, bits):
     return result
 
 def rescale_linear_params(array, down, upper):
-    """Rescale an arrary linearly."""
-    result = (upper - down)*(array - np.min(array))/(np.max(array)-np.min(array)) + down
-    return result
+    """Rescales an array linearly.
 
+    Args:
+        array (np.ndarray): The array to rescale.
+        down (float): The new minimum value of the array.
+        upper (float): The new maximum value of the array.
 
-def rescale_linear_output(array, down, upper):
-    """Rescale an arrary linearly."""
+    Returns:
+        np.ndarray: The rescaled array.
+
+    """
+    # Calculate the rescaled array
     result = (upper - down)*(array - np.min(array))/(np.max(array)-np.min(array)) + down
     return result
 
 def rescale_linear_training(array):
-    """
-    Rescale an arrary linearly. standard diviation
-    param array: input array, weights and bias as theano variable
-    return result: normalized array
+    """Rescales an array linearly by dividing by its standard deviation.
+
+    Args:
+        array (theano.tensor): The array to rescale.
+
+    Returns:
+        theano.tensor: The rescaled array.
+
     """
     W_axes_to_sum = 0
     result = array / T.sqrt(T.sum(T.sqr(array), axis=W_axes_to_sum, keepdims=True))
     return result
 
-def save_data_shared(filename, params, columns, bits=6):
+def save_data_shared(params, bits=6):
+    """Saves the given parameters as CSV files, after quantizing and rescaling them.
+
+    Args:
+        filename (str): The name of the file to save.
+        params (list): The parameters to save.
+        bits (int): The number of bits to use for quantization.
+
+    Returns:
+        list: The saved parameters.
+
     """
-    Below 3 lines are the step to save it as readable csv
-    """
+    # Calculate the normalization scale
     normalize_scale = 0
     for i in range(bits-1):
         normalize_scale += 1/(2**(i+1))
     
+    # Convert shared variables to numpy arrays
     param_list = [param.get_value() for param in params]
 
+    # Initialize variables for quantization
     _param_list_result = []
-    _decoded_params = []
     decoded_params_output = []
-    # for param in param_list:
-    #     _param_result = quantitatize_layer(param)
-    #     _param_list_result.append(_param_result)
-
-    # for param in _param_list_result:
-    #     _param_result = dequantitatize_layer(param)
-    #     _decoded_params.append(_param_result)
-
     min_v_list = np.array([])
     max_v_list = np.array([])
+
+
+    # Quantize each parameter using linear quantization
     for param in param_list:
         max_v_list = np.append(max_v_list, np.amax(param))
         min_v_list = np.append(min_v_list, np.amin(param))
 
-    max_v = np.max(max_v_list)
-    min_v = np.min(min_v_list)
-    print("@@@@max_v: ", max_v)
-    print("@@@@min_v: ", min_v)
 
     for param in param_list:
-        # param = rescale_linear_params(param, -1 , 1)
-        _param_result = quantize_linear_params(param, bits, min_v, max_v)
+        _param_result = quantize_linear_params(param, bits)
         decoded_params_output.append(_param_result)
-    # for param in param_list:
-        
-    #     _param_result = quantize_linear_params(param, bits)
-    #     decoded_params_output.append(_param_result)
 
-    # for decod_i in _decoded_params:
-    #     array = np.array(decod_i).astype(np.float32)
-    #     decoded_params_output.append(array)
-
-    # quantitation of weights
-    # weights = [quantitatize_layer(param_list[0])]
-    downgraded_weights = []
-    max = []
-    min = []
     weights = []
 
     if len(_param_list_result) > 0:
@@ -282,15 +278,11 @@ def save_data_shared(filename, params, columns, bits=6):
                         for elem in _param_list_result[0]])
 
     bias = []
-    repeat_weight_printout = []
-    repeat_bias_printout = []
-    repeat = 0
     # no need for MP1 and SM, and exclude weights and bias both
     for i in range(1, len(_param_list_result)):
 
         if i % 2 == 0:
             # quantitation of weights
-            downgraded_weights = []
             _param_list_local = np.array(_param_list_result[i])
             if len(_param_list_local.shape) >= 4:
                 weights.append([downgrade_dimension(elem)
@@ -301,144 +293,43 @@ def save_data_shared(filename, params, columns, bits=6):
         else:
             _param_list_local = np.array(_param_list_result[i])
             bias.append(_param_list_result[i])
-    # repeat_weight_printout = repeat_by_column_weights(weights, columns)
-    # repeat_bias_printout = repeat_by_column_bias(bias, columns)
 
-    # np.savetxt('param_b.csv', weights, fmt='%s', delimiter='')
+    # Save the parameters to CSV files
     np.set_printoptions(threshold=sys.maxsize)
     np.savetxt('params.csv', param_list, fmt='%s', delimiter='')
     np.savetxt('param_decoded.csv', decoded_params_output,
                fmt='%s', delimiter='')
     return param_list
 
-def quantitatize_layer(params):
-    # params: one layer
-    #debug
-    params = np.array(params)
-    _params_result = []
-    if len(params.shape) > 2:  # normally for Conv
-        for neuron in params:  # in one kernel
-            _neuron_result = []
-            for ele in neuron:
-                _ele_result = []
-                for C in ele:
-                    _C_result = []
-                    for index in range(len(C)):
-                        _C_q = C[index]
-                        float_result = float_bin(_C_q)
-                        _C_result.append(float_result)
-                    _ele_result.append(_C_result)
-                _neuron_result.append(_ele_result)
-            _params_result.append(_neuron_result)
-
-    elif len(params.shape) == 2:  # normally for MLP
-        _params_result = []
-        for C in params:
-            _C_result = []
-            for index in range(len(C)):
-                _C_q = C[index]
-                float_result = float_bin(_C_q)
-                _C_result.append(float_result)
-            _params_result.append(_C_result)
-    else:  # normally for bias
-        _params_result = []
-        for index in range(len(params)):
-            _param_q = params[index]
-            float_result = float_bin(_param_q)
-            _params_result.append(float_result)
-    _params_result = np.array(_params_result)
-    return _params_result
-
-
-def dequantitatize_layer(params):
-    # params: one layer
-    #debug
-    params = np.array(params)
-    _params_result = []
-    if len(params.shape) > 2:  # normally for Conv
-        for neuron in params:  # in one kernel
-            # print("neuron: ", neuron)
-            _neuron_result = []
-            for ele in neuron:
-                _ele_result = []
-                for C in ele:
-                    _C_result = []
-                    for index in range(len(C)):
-                        # C[index] = float("{:.5f}".format(C[index]))
-                        # float_result = float_bin(C[index])
-                        float_result = bin_float(C[index])
-                        _C_result.append(float_result)
-                    _ele_result.append(_C_result)
-                _neuron_result.append(_ele_result)
-            _params_result.append(_neuron_result)
-
-    elif len(params.shape) == 2:  # normally for MLP
-        _params_result = []
-        for C in params:
-            _C_result = []
-            for index in range(len(C)):
-                # C[index] = float("{:.5f}".format(C[index]))
-                # float_result = float_bin(C[index])
-                float_result = bin_float(C[index])
-                _C_result.append(float_result)
-            _params_result.append(_C_result)
-    else:  # normally for bias
-        _params_result = []
-        for index in range(len(params)):
-            # params[index] = float("{:.5f}".format(params[index]))
-            # float_result = float_bin(params[index])
-            float_result = bin_float(params[index])
-            _params_result.append(float_result)
-    _params_result = np.array(_params_result)
-    return _params_result
-
 
 def downgrade_dimension(params):
+    """
+    Downgrade the dimension of an array by flattening the last two dimensions into a single dimension.
+
+    Args:
+        params: a numpy array of shape (..., m, n)
+
+    Returns:
+        A 2D numpy array of shape (..., m * n)
+
+    Example:
+        Given a numpy array of shape (2, 2, 3), this function returns a flattened 2D array of shape (2, 6).
+    """
     result = [e for f in params[0] for e in f]
     return result
 
 
-def repeat_by_column_weights(source, columns):
-    print("source: ", source)
-    repeat_source_printout = []
-    for h in source:  # in one layer
-        repeat_source = []
-        for c in h:  # in one kernel
-            repeat_source_r = []
-            repeat_source_col = []
-            for i in range(8):  # repeat as a column
-                repeat_source_r.append(c)  # build one 2Cu
-
-            cols = int(columns[source.index(h)])
-            for i in range(cols):
-                # duplicate as columns in one kernel
-                repeat_source_col.append(repeat_source_r)
-
-            # collect 2Cus for kernel sets
-            repeat_source.append(repeat_source_col)
-        repeat_source_printout.append(repeat_source)  # finish 2Cus for layers
-
-    return repeat_source_printout
-
-
-def repeat_by_column_bias(layers, columns):
-    repeat_resut = []
-    for layer in layers:
-        wshape, bshape = layer.di
-        row = []
-        repeat_row = []
-        cols = int(columns[layers.index(layer)])
-        for ele in layer:
-            row.append([[ele for i in range(9)] for h in range(8)])
-        repeat_row.append([row for i in range(cols)])
-        repeat_resut.append(repeat_row)
-
-    return repeat_resut
-
-#### Load the MNIST
-
 
 def resize_images(data):
+    """Resizes images in the input data to 30x30.
+
+    Args:
+        data: A tuple of two lists. The first list contains the image data as flattened arrays of length 784,
+            and the second list contains the corresponding labels.
+
+    Returns:
+        A tuple of two lists with the same format as the input data, but with the images resized to 30x30.
+    """
     _result = [[], []]
     for h in data[0]:
         _reshaped = np.reshape(h, (28, 28))
@@ -448,19 +339,37 @@ def resize_images(data):
     return _result
 
 def load_data_shared(filename="mnist.pkl.gz"):
+    """Load the MNIST dataset and preprocess it for use in Theano.
+
+    Args:
+        filename (str): The name of the file containing the MNIST dataset.
+
+    Returns:
+        A list of three tuples, each containing a pair of shared variables 
+        (one for the input data and one for the labels) for the training, 
+        validation, and test sets, respectively.
+
+    """
     f = gzip.open(filename, 'rb')
     training_data, validation_data, test_data = pickle.load(
         f, encoding="latin1")
     f.close()
 
-## Update the dataset
+    ## Update the dataset
     training_data = resize_images(training_data)
     validation_data = resize_images(validation_data)
     test_data = resize_images(test_data)
 
     def shared(data):
-        """Place the data into shared variables.  This allows Theano to copy
+        """Place the data into shared variables. This allows Theano to copy
         the data to the GPU, if one is available.
+
+        Args:
+            data (tuple): A tuple containing the input data and the labels.
+
+        Returns:
+            A tuple of shared variables (one for the input data and one for 
+            the labels).
 
         """
         shared_x = theano.shared(
@@ -470,24 +379,31 @@ def load_data_shared(filename="mnist.pkl.gz"):
         return shared_x, T.cast(shared_y, "int32")
     return [shared(training_data), shared(validation_data), shared(test_data)]
 
-#### Main class used to construct and train networks
 
-def normalize_input(data, upper=1, down=-1):
-    result = (upper-down)*(data-T.min(data))/(T.max(data)- T.min(data)) + down 
-    return result
-
-
-def normalize_params(data, upper=1, down=0):
-    # result = (data/np.linalg.norm(data))
-    result = (upper - down)*(data - np.min(data))/(np.max(data)-np.min(data)) + down
-    return result
 class Network(object):
+    """A network model to include multiple layers: Convolution layer, Pool layer and FullyConnected layer
+    Args:
+        layers: A list of `Layer` instances that describe the network architecture.
+        mini_batch_size: An integer value for the mini-batch size used during training.
+        epoch_index: index of epoch tests
+        cost_list: the list for storing the cost in each epoch of training and test
+        accuracy_list:  the list for storing the accuracy in each epoch of training and test
+        params: the list to store params from each layer
+        decoded_params: the list to store the params after quantization.
+        occupation_list: the list to store the utilization ratio of area on IMC
+        x: function input variable
+        y: function output variable
+        output: output variable from the output layer
+        output_dropout: dropout of output from the output layer, for the cost calculation
+
+    """
 
     def __init__(self, layers, mini_batch_size):
-        """Takes a list of `layers`, describing the network architecture, and
-        a value for the `mini_batch_size` to be used during training
-        by stochastic gradient descent.
-
+        """Initializes a new instance of the Network class.
+        
+        Args:
+            layers: A list of `Layer` instances that describe the network architecture.
+            mini_batch_size: An integer value for the mini-batch size used during training.
         """
         self.layers = layers
         self.mini_batch_size = mini_batch_size
@@ -496,15 +412,9 @@ class Network(object):
         self.cost_list = np.array([0])
         self.accuracy_list = np.array([0])
 
-        self.y_cost_train = self.epoch_index*2  # Y-axis points
-        self.y_accuracy_train = self.epoch_index*2  # Y-axis points
-        self.y_cost_evaluate = self.epoch_index*2
-        self.y_accuracy_evaluate = self.epoch_index*2  # Y-axis points
         # expand the assigning process in for loop to skip the pool layer
         self.params = []
         self.decoded_params = []
-        self.columns = []
-        self.rows = []
         for layer in self.layers:
             if not layer.skip_paramterize():
                 for param in layer.params:
@@ -529,7 +439,22 @@ class Network(object):
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
             validation_data, test_data, lmbda=0.0):
-        """Train the network using mini-batch stochastic gradient descent."""
+        """Trains the network using mini-batch stochastic gradient descent.
+        
+        Args:
+            training_data: A tuple of numpy arrays representing the training data.
+            epochs: An integer value indicating the number of epochs to train for.
+            mini_batch_size: An integer value for the mini-batch size used during training.
+            eta: A float value representing the learning rate.
+            validation_data: A tuple of numpy arrays representing the validation data.
+            test_data: A tuple of numpy arrays representing the test data.
+            lmbda: A float value for the L2 regularization parameter.
+        Returns: 
+            accuracy_list[-1]: the last accruacy in the training batch
+            cost_list[-1]: the last cost in the training batch
+            params: weights and bias
+
+        """
         training_x, training_y = training_data
         validation_x, validation_y = validation_data
         test_x, test_y = test_data
@@ -551,18 +476,10 @@ class Network(object):
         # need to make grads integer
         grads = T.grad(cost_train, self.params)
         # need to make eta as resolution of quantitation
-
-        # flatten_params = T.flatten(self.params, ndim=1)
-        # max_v = T.max(flatten_params, axis=0)
-        # min_v = T.min(flatten_params, axis=0)
         updates = [(param, rescale_linear_training(param-eta*grad))
                    for param, grad in zip(self.params, grads)]
 
-        # updates = [(param, param-eta*grad)
-                #    for param, grad in zip(self.params, grads)]
 
-        # define functions to train a mini-batch, and to compute the
-        # accuracy in validation and test mini-batches.
         i = T.lscalar()  # mini-batch index
         train_mb = theano.function(
             [i], cost_train, updates=updates,
@@ -582,23 +499,6 @@ class Network(object):
                 validation_y[i *
                              self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
-
-        # vis_layer = theano.function(
-        #     [i], [self.layers[0].inpt],
-        #     givens={
-        #         self.x:
-        #             test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
-        #     },
-        # )
-        
-        # input_L0 = np.array(vis_layer(0))
-        # print("max in input image: ", np.amax(input_L0))
-        # print("min in input image: ", np.amin(input_L0))
-        # result = np.array(test_x[0:self.mini_batch_size].eval())
-        # result = np.reshape(result, (10,28,28))
-        # np.savetxt('normalized_output_L0.csv', output_L0[0][4][0], fmt='%s', delimiter='  ')
-        # np.savetxt('output_L0.csv',
-        #            result[4], fmt='%s', delimiter='  ')
 
 
         # Do the actual training
@@ -632,8 +532,7 @@ class Network(object):
             self.accuracy_list = np.append(self.accuracy_list, accuracy_mean)
 
             # encode and decode the params
-            self.decoded_params = save_data_shared(
-                "params.csv", self.params, self.columns)
+            self.decoded_params = save_data_shared(self.params)
             self.reset_params(scan_range=len(self.params)+4)
 
 
@@ -643,11 +542,22 @@ class Network(object):
 
         print("self.accuracy_list: ", self.accuracy_list)
 
-        return self.accuracy_list[-1], self.cost_list[-1], self.params, self.columns
+        return self.accuracy_list[-1], self.cost_list[-1], self.params
 
 
 ### suggest to create an individual network2 class definition
     def test_network(self, test_data, mini_batch_size, quantized=False):
+        """Tests the network on the given test data.
+        
+        Args:
+            test_data: A tuple of numpy arrays representing the test data.
+            mini_batch_size: An integer value for the mini-batch size used during testing.
+            quantized: A boolean indicating whether the parameters should be quantized.
+        Returns: 
+            test_accuracy: the average accuracy in a test batch.
+        
+        """
+
         i = T.lscalar()  # mini-batch index
         if quantized:
             updates = [(param, 0.03125*T.round(param/0.03125))for param in self.params]
@@ -684,16 +594,16 @@ class Network(object):
             print('corresponding test accuracy is {0:.2%}'.format(
                 test_accuracy))
                 
-
-        # test_predictions = [test_mb_predictions(
-            # j) for j in range(num_test_batches)]
-
-        # for prediction in test_predictions:
-            # print('The corresponding test prediction is ', prediction)
         return test_accuracy
 
     def reset_params(self, _params=None, scan_range=0):
-        # reset params w,b based on local/external params
+        """Resets the network parameters to the given values.
+        
+        Args:
+            _params: A list of numpy arrays representing the network parameters.
+            scan_range: An integer value indicating the range of indices to scan.
+        """
+
         if _params is None:
             _params = self.decoded_params
         decode_index = -1
@@ -705,8 +615,6 @@ class Network(object):
                     self.layers[int(
                         index/2)].w.set_value(_params[decode_index])
 
-                    # print(self.layers[int((index)/2)])
-                    # print(int((index)/2))
 
             else:
                 if not self.layers[int((index-1)/2)].skip_paramterize():
@@ -715,47 +623,74 @@ class Network(object):
                         self.layers[int((index-1)/2)].b.get_value())
                     self.layers[int((index-1)/2)
                                 ].b.set_value(_params[decode_index])
-                    
-                    # print(self.layers[int((index-1)/2)])
-                    # print(int((index-1)/2))
+
 
 
 
 class ConvLayer(object):
     """Used to create a combination of a convolutional and a max-pooling
-    layer.  A more sophisticated implementation would separate the
-    two, but for our purposes we'll always use them together, and it
-    simplifies the code, so it makes sense to combine them.
+    layer. A more sophisticated implementation would separate the two, but for
+    our purposes, we'll always use them together, and it simplifies the code,
+    so it makes sense to combine them.
+
+    Args:
+        filter_shape (tuple): A tuple of length 4, whose entries are the number
+            of filters, the number of input feature maps, the filter height, and
+            the filter width.
+        image_shape (tuple): A tuple of length 4, whose entries are the
+            mini-batch size, the number of input feature maps, the image height,
+            and the image width.
+        poolsize (tuple): A tuple of length 2, whose entries are the y and x
+            pooling sizes. Default is (2,2).
+        activation_fn (callable): An activation function. Default is sigmoid.
+        border_mode (str): A string representing the border mode for the
+            convolutional layer. Default is 'valid'.
+        row: kernel height * kernel width * input channels
+        column: output channels
+        occupation: the ratio of occupancy of weight replicas on IMC
+        w: theano variable of weights
+        b: theano variable of bias
+        params: list including weights and bias
 
     """
 
     def __init__(self, filter_shape, image_shape, poolsize=(2, 2),
                  activation_fn=sigmoid, border_mode='valid'):
-        """`filter_shape` is a tuple of length 4, whose entries are the number
-        of filters, the number of input feature maps, the filter height, and the
-        filter width.
-
-        `image_shape` is a tuple of length 4, whose entries are the
-        mini-batch size, the number of input feature maps, the image
-        height, and the image width.
-
-        `poolsize` is a tuple of length 2, whose entries are the y and
-        x pooling sizes.
-
         """
+        Initializes a Convolutional Layer object.
+
+        Args:
+            filter_shape: a tuple of length 4, whose entries are the number
+            of filters, the number of input feature maps, the filter height, and the
+            filter width.
+            image_shape: a tuple of length 4, whose entries are the
+            mini-batch size, the number of input feature maps, the image
+            height, and the image width.
+            poolsize: a tuple of length 2, whose entries are the y and
+            x pooling sizes.
+            activation_fn: an activation function for the layer (default: sigmoid)
+            border_mode: 'valid' (default) or 'full', specifying whether the filter should be applied only where the whole
+            filter fits (valid) or where it partially fits (full).
+
+        Returns:
+            A Convolutional Layer object.
+        """
+
+        # initialize object attributes
         self.filter_shape = filter_shape
         self.image_shape = image_shape
         self.poolsize = poolsize
         self.activation_fn = activation_fn
         self.border_mode = border_mode
 
+        # compute some internal attributes
         self.row = self.image_shape[1]*filter_shape[2]*filter_shape[3]
         self.column = self.filter_shape[0]
         self.occupation = self.column*self.row/(36*32)
 
-        print("Conv rows: ", self.row)
-        print("Conv columns: ", self.column)
+        # print information about the layer's dimensions
         print("Conv occupy: {:.2%}".format(self.occupation))
+
         # initialize weights and biases
         n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
         n_in = (image_shape[1]*np.prod(image_shape[2:]))
@@ -772,12 +707,23 @@ class ConvLayer(object):
                 dtype=theano.config.floatX),
             borrow=True)
 
+        # set object parameters
         self.params = [self.w, self.b]
 
     def __str__(self):
+        """Returns a string representation of the ConvLayer object."""        
         return f'ConvLayer(Object)'
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
+        """Sets the input for the ConvLayer and computes the output.
+
+        Args:
+            inpt: Input to the ConvLayer.
+            inpt_dropout: Dropout version of input.
+            mini_batch_size: Mini-batch size.
+
+        """
+        
         self.inpt = inpt.reshape(self.image_shape)
         conv_out = conv2d(
             input=self.inpt, filters=self.w, filter_shape=self.filter_shape,
@@ -797,9 +743,11 @@ class ConvLayer(object):
         return T.mean(T.eq(y, self.y_out))
 
     def skip_paramterize(self):
+        """Return False for parameterization."""
         return False
 
     def dimension_show(self):
+        """Return the dimensions of weights and biases."""
         weight_array = np.array(self.w)
         bias_array = np.array(self.b)
         return weight_array.shape, bias_array.shape
@@ -808,21 +756,36 @@ class ConvLayer(object):
 class PoolLayer(object):
     """Used to create a convolutional and a max-pooling
     layer.  
-
+    Args:
+        filter_shape: A tuple of length 4, whose entries are the number of
+            filters, the number of input feature maps, the filter height, and
+            the filter width.
+        image_shape: A tuple of length 4, whose entries are the mini-batch
+            size, the number of input feature maps, the image height, and the
+            image width.
+        activation_fn: The activation function used in this layer.
+        poolsize: A tuple of length 2, whose entries are the y and x pooling sizes.
+        border_mode: A string indicating the mode used for the border. Can be 'valid' or 'full'.
+        params: A list containing the shared variables for the weights and biases.
+        w: theano variable of weights
+        b: theano variable of bias
     """
 
     def __init__(self, filter_shape, image_shape, activation_fn=sigmoid,
                  poolsize=(2, 2), border_mode='valid', _params=[]):
-        """`filter_shape` is a tuple of length 4, whose entries are the number
-        of filters, the number of input feature maps, the filter height, and the
-        filter width.
+        """Initializes a PoolLayer object.
 
-        `image_shape` is a tuple of length 4, whose entries are the
-        mini-batch size, the number of input feature maps, the image
-        height, and the image width.
-
-        `poolsize` is a tuple of length 2, whose entries are the y and
-        x pooling sizes.
+        Args:
+            filter_shape: A tuple of length 4, whose entries are the number of
+                filters, the number of input feature maps, the filter height, and
+                the filter width.
+            image_shape: A tuple of length 4, whose entries are the mini-batch
+                size, the number of input feature maps, the image height, and the
+                image width.
+            activation_fn: The activation function used in this layer.
+            poolsize: A tuple of length 2, whose entries are the y and x pooling sizes.
+            border_mode: A string indicating the mode used for the border. Can be 'valid' or 'full'.
+            _params: A list containing the shared variables for the weights and biases.
 
         """
         self.filter_shape = filter_shape
@@ -838,10 +801,19 @@ class PoolLayer(object):
             self.image_shape[2],self.image_shape[2] *self.image_shape[3]))
 
     def __str__(self):
+        """Returns a string representation of the PoolLayer object."""
         return f'Pool(Object)'
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
-        #pass from conv to pooling
+        """Sets the input of the PoolLayer object and performs max-pooling on it.
+
+        Args:
+            inpt: The input data to the PoolLayer object.
+            inpt_dropout: The input data to the PoolLayer object with dropout applied.
+            mini_batch_size: The size of the mini-batch.
+
+        """
+        # pass from conv to pooling
         self.inpt = inpt.reshape(self.image_shape)
         pooled_out = pool_2d(
             input=self.inpt, ws=self.poolsize, ignore_border=True, mode='max')
@@ -849,16 +821,45 @@ class PoolLayer(object):
         self.output_dropout = self.output  # no dropout in the convolutional layers
 
     def skip_paramterize(self):
+        """Indicates that no parameterization is needed for the PoolLayer object."""        
         return True
 
     def dimension_show(self):
+        """Returns the shape of the weight and bias arrays."""        
         weight_array = np.array(self.w)
         bias_array = np.array(self.b)
         return weight_array.shape, bias_array.shape
     
 class FullyConnectedLayer(object):
 
+    """A fully connected layer with sigmoid activation function and dropout.
+    Args:
+        image_shape: A tuple of length 4, whose entries are the mini-batch size,
+            the number of input feature maps, the image height, and the image width.
+        n_in: the length of 1d params
+        n_out: An integer specifying the number of output units in the layer.
+        p_dropout: A float between 0 and 1 specifying the dropout probability (default: 0.0).
+        activation_fn: A function specifying the activation function to use (default: sigmoid).
+        occupation: The ratio of area of weights replicas on IMC
+
+    """
+
     def __init__(self, image_shape, n_out, activation_fn=sigmoid, p_dropout=0.0):
+        """Initialize the fully connected layer with the given image shape, number
+        of output units, activation function, and dropout probability.
+
+        Args:
+            image_shape: A tuple of length 4, whose entries are the mini-batch size,
+                the number of input feature maps, the image height, and the image width.
+            n_in: the length of 1d params
+            n_out: An integer specifying the number of output units in the layer.
+            p_dropout: A float between 0 and 1 specifying the dropout probability (default: 0.0).
+            activation_fn: A function specifying the activation function to use (default: sigmoid).
+            params: A list containing the shared variables for the weights and biases.
+            w: theano variable of weights
+            b: theano variable of bias
+
+        """
         self.image_shape = image_shape
         self.n_in = image_shape[1]*image_shape[2]*image_shape[3]
         self.n_out = n_out
@@ -866,9 +867,12 @@ class FullyConnectedLayer(object):
         self.activation_fn = activation_fn
 
 
+        # Calculate the percentage of the space that the weights and biases occupy
         print("n_in: {}, n_out:{}".format(self.n_in, self.n_out))
         self.occupation = self.n_in * self.n_out / (36*32)
         print("Full occupy: {:.2%}".format(self.occupation))
+
+        # Initialize the weights and biases
         self.w = theano.shared(
             np.asarray(
                 np.random.normal(
@@ -882,9 +886,18 @@ class FullyConnectedLayer(object):
         self.params = [self.w, self.b]
 
     def __str__(self):
+        """Return a string representation of the fully connected layer object."""        
         return f'FullyConnectedLayer(Object)'
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
+        """Set the input to the layer, perform dropout, and compute the output.
+
+        Args:
+            inpt: An array representing the input to the layer.
+            inpt_dropout: An array representing the input to the layer with dropout applied.
+            mini_batch_size: An integer representing the mini-batch size.
+
+        """
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = self.activation_fn(
             (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
@@ -895,25 +908,67 @@ class FullyConnectedLayer(object):
             T.dot(self.inpt_dropout, self.w) + self.b)
 
     def cost(self, net):
+        """Return the mean squared error cost for the layer.
+
+        Args:
+            net: A neural network object.
+
+        """
         # # MSE
         return T.sqr(self.output_dropout-net.y).mean()
 
     def accuracy(self, y):
-        "Return the accuracy for the mini-batch."
+        """Return the accuracy for the mini-batch.
+
+        Args:
+            y: An array of the target outputs.
+        
+        Returns:
+            Thenoa experssion of mean scores when the answer mathces the label
+
+        """
         return T.mean(T.eq(y, self.y_out))
 
     def skip_paramterize(self):
+        """Return False to indicate that the layer should not be parameterized."""
         return False
 
     def dimension_show(self):
+        """Return the shapes of weights and bias"""
         weight_array = np.array(self.w)
         bias_array = np.array(self.b)
         return weight_array.shape, bias_array.shape
 
 
 class SoftmaxLayer(object):
+    """Used to create a softmax layer.
+    Args: 
+        image_shape: A tuple whose entries are the output from the previous layer,
+            the number of input feature maps, the image height, and the image width.
+        n_in: the length of 1d params
+        n_out: An integer specifying the number of output units in the layer.
+        p_dropout: A float between 0 and 1 specifying the dropout probability (default: 0.0).
+        activation_fn: A function specifying the activation function to use (default: sigmoid).
+        params: A list containing the shared variables for the weights and biases.
+        w: theano variable of weights
+        b: theano variable of bias
+        occupation: the ratio of occupancy of weight replicas on IMC
+        inpt: softmax input, Theano variable
+        output: softmax output, Theano variable
+
+
+    """
 
     def __init__(self, image_shape, n_out, p_dropout=0.0):
+        """Initialize a SoftmaxLayer object.
+        Args:
+            image_shape: It is a tuple of length 4, whose entries are the mini-batch
+            size, the number of input feature maps, the image height, and the image
+            width.
+            n_out: The number of output units.
+            p_dropout: The probability of dropout.
+
+        """
         self.image_shape = image_shape
         self.n_in = image_shape[1]*image_shape[2]*image_shape[3]        
         self.n_out = n_out
@@ -931,9 +986,17 @@ class SoftmaxLayer(object):
 
 
     def __str__(self):
+        """Returns a string representation of the SoftmaxLayer object."""                
         return f'SofmaxLayer(Object)'
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
+        """Set the input for the SoftmaxLayer object.
+        Args: 
+            inpt: is the input for the layer.
+            inpt_dropout: is the input for dropout layer.
+            mini_batch_size: is the size of the mini-batch.
+
+        """
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = softmax((1-self.p_dropout) *
                               T.dot(self.inpt, self.w) + self.b)
@@ -949,13 +1012,22 @@ class SoftmaxLayer(object):
         return T.mean(T.nnet.categorical_crossentropy(self.output_dropout, net.y))
 
     def accuracy(self, y):
-        "Return the accuracy for the mini-batch."
+        """Calculate the accuracy for the mini-batch.
+        Args:
+            y: the true label.
+
+        Returns:
+            Thenoa experssion of mean scores when the answer mathces the label
+
+        """
         return T.mean(T.eq(y, self.y_out))
 
     def skip_paramterize(self):
+        """Return False for parameterization."""
         return False
 
     def dimension_show(self):
+        """Return the dimensions of weights and biases."""
         weight_array = np.array(self.w)
         bias_array = np.array(self.b)
         return weight_array.shape, bias_array.shape
@@ -968,7 +1040,16 @@ def size(data):
 
 
 def dropout_layer(layer, p_dropout):
+    """Apply dropout to the given layer with a given probability.
+
+    `layer` is the layer to apply dropout to.
+    `p_dropout` is the probability of dropping out a unit.
+
+    """
+    # Create a random stream with a shared seed for reproducibility.
     srng = shared_randomstreams.RandomStreams(
         np.random.RandomState(0).randint(999999))
+    # Create a binary mask with the same shape as the layer.
     mask = srng.binomial(n=1, p=1-p_dropout, size=layer.shape)
+    # Multiply the layer by the mask and return it.
     return layer*T.cast(mask, theano.config.floatX)

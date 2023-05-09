@@ -8,36 +8,43 @@ import matplotlib.pyplot as plt
 import numpy as np
 import network3
 import pandas as pd
-from draw_IMC import Draw_IMC
+# from draw_IMC import Draw_IMC
 
 
 
 # ----------------------
 # - network3.py example:
 
-#for test
+# Set initial empty lists to store training and test accuracies, and cost values
 train_accuracylist = []
 quantized_test_accuracylist = []
 full_test_accuracylist = []
 cost_list = []
-epoch_index = 10
+usage_ratio = []
+
+# Set the total number of epochs and create an array of epoch indices
+epoch_index = 3
 epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
+
+# Set the start value for the number of bits for quantization
 # bits start value
 bits_start = 2
 
-# read data:
+
+# Load the training, validation, and test data
 training_data, validation_data, test_data = network3.load_data_shared()
-# mini-batch size:
+
+# Set the mini-batch size
 mini_batch_size = 10
-# 8 X 8
-# number of nuerons in Conv1
+# Set the number of neurons for each convolutional layer
+# The first layer has 1 input channel, and output channels are set to 4
+# The second and third layers have 8 output channels
 CHNLIn = 1
 CHNL1 = 4  # change to 2 to keep columns in constraints
 CHNL2 = 8
 CHNL3 = 8
 
-usage_ratio = []
-
+# Define the scale of pooling, kernels in the convolution and image size
 pool_scale = 2
 conv_scale = 3
 image_scale = 28 # padding twice, in hardware padding by 2 directly
@@ -52,6 +59,7 @@ i_f_map = ((image_scale, image_scale, CHNL1, CHNLIn),  # same padding
            )
 
 #Conv1
+
 image_shape1 = (mini_batch_size, 
                 CHNLIn, # input channel
                 i_f_map[0][0], # scale
@@ -91,11 +99,24 @@ image_shape7 = (mini_batch_size, i_f_map[5][3], i_f_map[6][0], i_f_map[6][1])
 filter_shape7 = (i_f_map[6][2], i_f_map[6][3], conv_scale, conv_scale)
 
 class CNN_compiler(object):
+    """A CNN compiler to include multiple layers and do training tasks.
+    Args: 
+        net: Network object containing layers
+    """
     def __init__(self):
         """
-        create models for training network
+        Constructor for CNN_compiler class.
+
+        Initializes the Convolutional Neural Network (CNN) models for training network.
+
+        Args:
+            None
+
+        Returns:
+            None
         """
 
+        # Define the Convolutional and Pooling Layers
         Conv1 = ConvLayer(image_shape=image_shape1,
                         filter_shape=filter_shape1,
                         poolsize=(pool_scale, pool_scale),
@@ -121,17 +142,20 @@ class CNN_compiler(object):
                         poolsize=(pool_scale, pool_scale),
                         activation_fn=ReLU, border_mode='half')
 
+        # Define the Fully Connected Layers
         MLP1 = FullyConnectedLayer(image_shape=image_shape6, n_out=i_f_map[5][-1],
-                                activation_fn=ReLU, p_dropout=0.5)
+                                   activation_fn=ReLU, p_dropout=0.5)
 
         MLP2 = FullyConnectedLayer(image_shape=image_shape7,
                                     n_out=i_f_map[6][3], activation_fn=ReLU, p_dropout=0.5)
 
+        # Define the Softmax Layer
         SMLayer = SoftmaxLayer(image_shape=image_shape7,
                             n_out=i_f_map[6][3])
 
+        # Define the network by connecting all layers
         self.net = Network(layers=[
-                        Conv1,
+            Conv1,
                         Pool1,
                         Conv2,
                         Pool2,
@@ -143,21 +167,46 @@ class CNN_compiler(object):
 
 
     def training_network(self):
-        accuracy_trained, cost, _params, columns = self.net.SGD(training_data=training_data, epochs=30, 
+        """
+        Function to train the CNN network.
+
+        Trains the CNN using Stochastic Gradient Descent (SGD) and returns the accuracy,
+        cost, and parameters of the trained network.
+
+        Args:
+            None
+
+        Returns:
+            accuracy_trained (float): the accuracy of the trained network
+            cost (list): list of costs during the training process
+            _params (list): list of trained parameters of the network
+        """        
+        accuracy_trained, cost, _params = self.net.SGD(training_data=training_data, epochs=3, 
                                                     mini_batch_size=mini_batch_size, 
                                                     eta=0.03, validation_data=validation_data, 
                                                     test_data=test_data, lmbda=0.1)
 
 
 
-        return accuracy_trained, cost, _params, columns
+        return accuracy_trained, cost, _params
 
 
 class CNN_simulator(object):
+    """An CNN simulator to include multiple layers and do inference test tasks.
+    Args: 
+        net: Network object containing layers
+    """
     def __init__(self):
         """
-        params bits: for changing bits for quantization of output by layers 
-        params _params: weights and bias by layers 
+        Constructor for CNN_compiler class.
+
+        Initializes the Convolutional Neural Network (CNN) models for tesing network.
+
+        Args:
+            None
+
+        Returns:
+            None
         """
         Conv1 = ConvLayer(image_shape=image_shape1,
                             filter_shape=filter_shape1,
@@ -179,6 +228,7 @@ class CNN_simulator(object):
                             poolsize=(pool_scale, pool_scale),
                             activation_fn=ReLU, _params=Conv2.params)
 
+        # Define the Fully Connected Layers
         MLP1 = FullyConnectedLayer(image_shape=image_shape6, n_out=i_f_map[5][-1],
                                     activation_fn=ReLU, p_dropout=0.5)
 
@@ -196,6 +246,15 @@ class CNN_simulator(object):
                                 mini_batch_size=mini_batch_size)
 
     def raw_test_network(self, _params):
+        """
+        Perform raw testing on the network given the set of parameters.
+        
+        Args:
+            _params: list of trained parameters of the network
+    
+        Returns:
+            full_test_accuracy: accuracy of the raw test on the network
+        """
         params_list = _params
         self.net.reset_params(params_list, scan_range=len(_params)+4)
         full_test_accuracy = self.net.normal_test_network(test_data, mini_batch_size)
@@ -204,7 +263,17 @@ class CNN_simulator(object):
 
 
     def quantized_test_network(self, bits, _params):
-        # decoded_params = save_data_shared("params.csv", _params, columns) 
+        """
+        Perform quantized testing on the network given the set of parameters and bit size.
+
+        Args:
+            bits: bit size of the parameters
+            _params: list of trained parameters of the network
+
+        Returns:
+            quantized_test_accuracy: accuracy of the quantized test on the network
+            usage_ratio: list of memory usage ratio of each layer of the network
+        """
         self.net.reset_params(_params, scan_range=len(_params)+4)
         quantized_test_accuracy = self.net.test_network(test_data,mini_batch_size,bits)
         print("quantized_test_accuracy from self.net: {:.2%}".format(quantized_test_accuracy))
@@ -215,31 +284,33 @@ class CNN_simulator(object):
 
 def plot_n(indexlists, valuelists, labellist):
     """
-    the length of params should be the same
-    params indexlists: list of test indexs 
-    params valuelists: list of values should be ploted
-    params labellist: list of titles for each plot
-    """
-    fig, axes = plt.subplots(1, 1)
-    ## for accuracy plot
-    for ind in range(len(valuelists)-1):
-        axes.plot(indexlists[0], valuelists[ind],
-                     'o-', label=labellist[ind])
-        axes.legend()
-        for i, j in zip(indexlists[0], valuelists[ind]):
-            axes.annotate('{:.2%}'.format(j), xy=(i, j))
-    axes.set_title(
-        "training and full test by 10 times")
-    axes.set_xticks(np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
+    Plot multiple lines on a single figure, and show the results.
 
-    # axes[1].plot(indexlists[0], valuelists[-1], "-.",
-    #              label=labellist[-1])  # Plot the chart
-    # axes[1].legend()
-    # for i, j in zip(indexlists[0], valuelists[-1]):
-    #     axes[1].annotate('{:.3}'.format(j), xy=(i, j))
-    # axes[1].set_title("quantized test with 10 samples per epoch")
-    # axes[1].set_xticks(
-    #     np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
+    Args:
+        indexlists (list): List of test indexes.
+        valuelists (list): List of values to be plotted.
+        labellist (list): List of titles for each plot.
+    """
+    fig, axes = plt.subplots(2, 1)
+    # for accuracy plot
+    for ind in range(len(valuelists)-1):
+        axes[0].plot(indexlists[0], valuelists[ind],
+                     'o-', label=labellist[ind])
+        axes[0].legend()
+        for i, j in zip(indexlists[0], valuelists[ind]):
+            axes[0].annotate('{:.2%}'.format(j), xy=(i, j))
+    axes[0].set_title(
+        "training and full test by 10 times")
+    axes[0].set_xticks(np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
+
+    axes[1].plot(indexlists[0], valuelists[-1], "-.",
+                 label=labellist[-1])  # Plot the chart
+    axes[1].legend()
+    for i, j in zip(indexlists[0], valuelists[-1]):
+        axes[1].annotate('{:.3}'.format(j), xy=(i, j))
+    axes[1].set_title("quantized test with 10 samples per epoch")
+    axes[1].set_xticks(
+        np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
     
     fig.savefig("theano_traing_fulltest.png")
     plt.show()  # display
@@ -247,11 +318,14 @@ def plot_n(indexlists, valuelists, labellist):
 
 def float_bin(number, places=2):
     """
-    convert the float result into binary string
-    e.g. 0.5->"01 000000"
-    param number: float number
-    param palces: number of bits
-    return int8_t number
+    Convert a floating point number to a binary string.
+
+    Args:
+        number (float): The number to be converted.
+        places (int): The number of bits.
+
+    Returns:
+        int: The integer number.
     """
     if np.isnan(number):
         number = 0
@@ -272,6 +346,16 @@ def float_bin(number, places=2):
 
 
 def convert_float_int8(number, isweights):
+    """
+    Convert a floating point number to a signed 8-bit integer.
+
+    Args:
+        number (float): The number to be converted.
+        isweights (bool): Indicates whether the number represents weights.
+
+    Returns:
+        int: The converted number.
+    """
     answer_in = 0
     if isweights:
         if number > (2**(8-2)-1)/2**6:
@@ -296,12 +380,24 @@ def convert_float_int8(number, isweights):
 
 
 def converstring_int_list(nu_array):
+    """
+    Convert a list of strings to a numpy array of floats.
+
+    params nu_array: list of strings to convert
+    return: numpy array of floats
+    """
     num_array = np.array(nu_array)
     num_array = num_array.astype(np.float32)
     return num_array
 
 
 def remove_enpty_space(_list):
+    """
+    Remove empty spaces from a list of strings.
+
+    params _list: list of strings to remove spaces from
+    return: new list with spaces removed
+    """
     w22 = []
     for ele in _list:
         if ele.strip():
@@ -310,10 +406,13 @@ def remove_enpty_space(_list):
 
 
 def param_extraction():
+    """Extract parameters from a CSV file and store them in a list."""
+    # Read the CSV file containing the parameters
     rainfall = pd.read_csv('param_decoded.csv', sep=',', header=None)
     sized_data = rainfall
-
     smessage = sized_data.values
+
+    # Initialize variables for storing the extracted parameters
     params = []
     weights_1 = []
     weights_map_1 = []
@@ -338,6 +437,7 @@ def param_extraction():
 
     counter = 0
 
+    # Extract weights_map_1
     for i in range(0, 12):
         w = smessage[i][0].split(']')
         w = w[0].split('[')
@@ -356,6 +456,7 @@ def param_extraction():
     # prolog
     params.append(weights_map_1)
 
+    # Extract bias_map_1
     b = smessage[12][0].split(']')
     b = b[0].split('[')
     bb = remove_enpty_space(b)
@@ -364,6 +465,7 @@ def param_extraction():
     bias_map_1 = converstring_int_list(bias_1)
     params.append(bias_map_1)
 
+    # Extract weights_map_2
     for i in range(13, 109):
         w = smessage[i][0].split(']')
         w = w[0].split('[')
@@ -377,6 +479,7 @@ def param_extraction():
     weights_map_2 = converstring_int_list(weights_map_2)
     params.append(weights_map_2)
 
+    # Extract bias_map_2
     for i in range(109, 111):
         b = smessage[i][0].split(']')
         b = b[0].split('[')
@@ -450,22 +553,26 @@ def param_extraction():
 
 
 if __name__ == '__main__':
+    # Training and testing the CNN compiler and extracting the optimized parameters
     for i in range(epoch_index):
         compiler = CNN_compiler()
-        accuracy_trained, cost, _params, columns = compiler.training_network()
+        accuracy_trained, cost, _params = compiler.training_network()
         _params = param_extraction()
 
+        # Testing the network with optimized parameters
         simulator = CNN_simulator()
         full_test_accuracy = simulator.raw_test_network(_params)
         quantized_test_accuracy, usage_ratio = simulator.quantized_test_network(
             i+bits_start, _params)
 
+        # Storing the results for plotting
         train_accuracylist.append(accuracy_trained)
         full_test_accuracylist.append(full_test_accuracy)
         quantized_test_accuracylist.append(quantized_test_accuracy)
         # cost_list.append(cost)
         print("Now i = ", i)
 
+    # Printing the results
     print("DeepLearning:")
     print("train_accuracylist= ", ['{:.2%}'.format(i) 
         for i in train_accuracylist])
@@ -474,8 +581,8 @@ if __name__ == '__main__':
     print("quantized_test_accuracylist= ", ['{:.2%}'.format(i) 
         for i in quantized_test_accuracylist])
 
-
-    plot_n([epoch_indexs+0, epoch_indexs], [train_accuracylist, full_test_accuracylist, quantized_test_accuracylist], 
+    # Plotting the results
+    plot_n([epoch_indexs+bits_start, epoch_indexs], [train_accuracylist, full_test_accuracylist, quantized_test_accuracylist],
            ["trained accuracy","full test accuracy", "quantized test accuracy"])
 
     # model = Draw_IMC(total_channels=[1, 4, 8], input_sizes=[30, 14],

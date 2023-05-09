@@ -7,97 +7,109 @@ import theano.tensor as T
 from network3 import *
 
 class Inference_Network(object):
+    """A network model to include multiple layers: Convolution layer, Pool layer and FullyConnected layer
+    Args:
+        layers: A list of `Layer` instances that describe the network architecture.
+        mini_batch_size: An integer value for the mini-batch size used during training.
+        cost_list: the list for storing the cost in each epoch of training and test
+        accuracy_list:  the list for storing the accuracy in each epoch of training and test
+        params: the list to store params from each layer
+        decoded_params: the list to store the params after quantization.
+        occupation_list: the list to store the utilization ratio of area on IMC
+        x: function input variable
+        y: function output variable
+        output: output variable from the output layer
+        output_dropout: dropout of output from the output layer, for the cost calculation
+
+    """
 
     def __init__(self, layers, mini_batch_size):
-        """Takes a list of `layers`, describing the network architecture, and
-        a value for the `mini_batch_size` to be used during training
-        by stochastic gradient descent.
-
         """
+        Initializes an Inference_Network object with the given layers and mini-batch size.
+
+        Args:
+            layers: A list of Layer instances that describe the network architecture.
+            mini_batch_size: An integer value for the mini-batch size used during training.
+
+        Returns:
+            None
+        """
+
+        # initialize variables
         self.layers = layers
         self.mini_batch_size = mini_batch_size
 
-        self.epoch_index = np.array([0])
         self.cost_list = np.array([0])
         self.accuracy_list = np.array([0])
 
-        self.y_cost_train = self.epoch_index*2  # Y-axis points
-        self.y_accuracy_train = self.epoch_index*2  # Y-axis points
-        self.y_cost_evaluate = self.epoch_index*2
-        self.y_accuracy_evaluate = self.epoch_index*2  # Y-axis points
         # expand the assigning process in for loop to skip the pool layer
         self.params = []
         self.decoded_params = []
-        self.columns = []
-        self.rows = []
         for layer in self.layers:
             if not layer.skip_paramterize():
                 for param in layer.params:
                     self.params.append(param)
 
         self.occupation_list = []
+
+        # populate the params and occupation_list based on the layers
         for layer in self.layers:  # skip softmax and MLP
             if not layer.skip_paramterize():
                 self.occupation_list.append(layer.occupation)
+
+        # initialize input and output variables
         self.x = T.matrix("x")
         self.y = T.ivector("y")
         # xrange() was renamed to range() in Python 3.
         init_layer = self.layers[0]
         init_layer.set_inpt(self.x, self.x, self.mini_batch_size)
         # xrange() was renamed to range() in Python 3.
+
+        # set input for each layer based on output of previous layer
         for j in range(1, len(self.layers)):
             prev_layer, layer = self.layers[j-1], self.layers[j]
             layer.set_inpt(
                 prev_layer.output, prev_layer.output_dropout, self.mini_batch_size)
+            
+        # set final output and output_dropout
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
 
-    def ADC_DAC(self, output, output_dropout, bits, normalize=False, bypass=False):
-        if normalize:
-            if len(output.shape) > 2:
-                ## Conv1/2
-                for i in range(len(output)):
-                    for h in range(len(output[i])):
-                        output[i][h] = rescale_linear_output(
-                        output[i][h], -1, 1)
+    def ADC_DAC(self, output, output_dropout, bits,bypass=False):
+        """
+        Applies analog-to-digital and digital-to-analog conversion to the given output and output_dropout.
 
-                for i in range(len(output_dropout)):
-                    for h in range(len(output[i])):
-                        output_dropout[i][h] = rescale_linear_output(
-                        output_dropout[i][h], -1, 1)
-            else:
-                #FC1 FC2
-                output = rescale_linear_output(output, -1, 1)
-                output_dropout = rescale_linear_output(output_dropout, -1, 1)
+        Args:
+            output: The output to be quantized.
+            output_dropout: Dropout of output from the output layer, for the cost calculation.
+            bits: The number of bits to use for quantization.
+            normalize: Whether to normalize the output.
+            bypass: Whether to bypass quantization.
 
-
-            # print("output shape: ", output.shape)
-            # np.savetxt('normalized_output_fc2.csv',
-                    #    output, fmt='%s', delimiter=', ')
-
+        Returns:
+            Decoded output and dropout if bypass is False, else returns output and output_dropout.
+        """
         if not bypass:
             decoded_output = quantize_linear_output(output, bits)
             decoded_dropout = quantize_linear_output(
                 output_dropout, bits)
-
-            # _quantized_output = local_quantitatize_layer(output, bits)
-            # _quantized_output_dropout = local_quantitatize_layer(
-            #     output_dropout, bits)
-
-            # # print("_quantized_output shape: ", _quantized_output.shape)
-            # # np.savetxt('quantized_output_fc2.csv',
-            #         #    _quantized_output, fmt='%s', delimiter=', ')
-
-            # decoded_output = local_dequantitatize_layer(
-            #     _quantized_output, bits)
-            # decoded_dropout = local_dequantitatize_layer(
-            #     _quantized_output_dropout, bits)
 
             return decoded_output, decoded_dropout
         else:
             return output, output_dropout
 
     def test_network(self, test_data, mini_batch_size, bits):
+        """
+        Tests the network's accuracy on the given test data.
+
+        Args:
+            test_data: The test data.
+            mini_batch_size: An integer value for the mini-batch size used during testing.
+            bits: The number of bits to use for quantization.
+
+        Returns:
+            The network's accuracy on the test data.
+        """
         num_test_batches = int(size(test_data)/mini_batch_size/10)
         test_mb_accuracy = np.mean([self.quantization_test_batch(
                                     test_data, j, bits) for j in range(1,2,1)])
@@ -109,6 +121,16 @@ class Inference_Network(object):
 
 ### suggest to create an individual network2 class definition
     def quantization_test_batch(self, test_data, batch_index, quantized_bits):
+        """Performs quantization on the given test data with the given batch index and number of bits.
+
+        Args:
+            test_data (tuple): A tuple containing the test input and test output.
+            batch_index (int): An integer value for the batch index.
+            quantized_bits (int): The number of bits used in the operation.
+
+        Returns:
+            float: The accuracy of the test.
+        """
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
         _index = 0  # index to get output at layer 1
@@ -145,7 +167,7 @@ class Inference_Network(object):
         
 
         _l0_output, _l0_output_dropout = self.ADC_DAC(output_0,
-                                                      output_dropout_0, quantized_bits, normalize=False, bypass=False)
+                                                      output_dropout_0, quantized_bits, bypass=False)
         
         output0 = np.int_(_l0_output * 64)
         np.savetxt('dequantized_conv1_0.csv',
@@ -176,7 +198,7 @@ class Inference_Network(object):
         _data_l2_output = self.layers[2].output.eval()
         _data_l2_output_dropout = self.layers[2].output_dropout.eval()
         _l2_output, _l2_output_dropout = self.ADC_DAC(_data_l2_output,
-                                                      _data_l2_output_dropout, quantized_bits, normalize=False, bypass=False)
+                                                      _data_l2_output_dropout, quantized_bits, bypass=False)
 
         output2 = np.int_(_l2_output * 64)
         np.savetxt('dequantized_conv2_0.csv',
@@ -231,7 +253,7 @@ class Inference_Network(object):
                 #    _data_l4_output, fmt='%s', delimiter=', ')
 
         _l4_output, _l4_output_dropout = self.ADC_DAC(
-            _data_l4_output, _data_l4_dropout, quantized_bits,  normalize=False, bypass=False)
+            _data_l4_output, _data_l4_dropout, quantized_bits,  bypass=False)
 
         output4 = np.int_(_l4_output * 64)
         np.savetxt('dequantized_fc1.csv',
@@ -248,7 +270,7 @@ class Inference_Network(object):
                 #    _data_l5_output, fmt='%s', delimiter=', ')
 
         _l5_output, _l5_output_dropout = self.ADC_DAC(
-            _data_l5_output, _data_l5_dropout, quantized_bits,  normalize=False, bypass=False)
+            _data_l5_output, _data_l5_dropout, quantized_bits, bypass=False)
         # probably no need to noralize the FC?
 
         output5 = np.int_(_l5_output * 64)
@@ -267,6 +289,15 @@ class Inference_Network(object):
 
 ### suggest to create an individual network2 class definition
     def normal_test_network(self, test_data, mini_batch_size):
+        """Tests the inference network with the given test data and mini-batch size.
+
+        Args:
+            test_data (tuple): A tuple containing the test input and test output.
+            mini_batch_size (int): An integer value for the mini-batch size used during testing.
+
+        Returns:
+            float: The accuracy of the test.
+        """
         i = T.lscalar()  # mini-batch index
         test_x, test_y = test_data
         num_test_batches = int(size(test_data)/mini_batch_size)
@@ -303,6 +334,12 @@ class Inference_Network(object):
         return test_accuracy
 
     def reset_params(self, _params=None, scan_range=0):
+        """Resets the parameters of the inference network with the given parameters and scan range.
+
+        Args:
+            _params (list, optional): The parameters to reset. Defaults to None.
+            scan_range (int, optional): The range to scan. Defaults to 0.
+        """
         # reset params w,b based on local/external params
         if _params is None:
             _params = self.decoded_params
