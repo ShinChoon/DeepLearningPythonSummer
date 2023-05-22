@@ -555,8 +555,8 @@ def param_extraction():
 if __name__ == '__main__':
     # Training and testing the CNN compiler and extracting the optimized parameters
     for i in range(epoch_index):
-        # compiler = CNN_compiler()
-        # accuracy_trained, cost, _params = compiler.training_network()
+        compiler = CNN_compiler()
+        accuracy_trained, cost, _params = compiler.training_network()
         _params = param_extraction()
 
         # Testing the network with optimized parameters
