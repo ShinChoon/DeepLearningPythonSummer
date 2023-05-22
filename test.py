@@ -23,7 +23,7 @@ cost_list = []
 usage_ratio = []
 
 # Set the total number of epochs and create an array of epoch indices
-epoch_index = 3
+epoch_index = 10
 epoch_indexs = np.arange(0, epoch_index, 1, dtype=int)
 
 # Set the start value for the number of bits for quantization
@@ -181,7 +181,7 @@ class CNN_compiler(object):
             cost (list): list of costs during the training process
             _params (list): list of trained parameters of the network
         """        
-        accuracy_trained, cost, _params = self.net.SGD(training_data=training_data, epochs=3, 
+        accuracy_trained, cost, _params = self.net.SGD(training_data=training_data, epochs=0, 
                                                     mini_batch_size=mini_batch_size, 
                                                     eta=0.03, validation_data=validation_data, 
                                                     test_data=test_data, lmbda=0.1)
@@ -300,7 +300,7 @@ def plot_n(indexlists, valuelists, labellist):
         for i, j in zip(indexlists[0], valuelists[ind]):
             axes[0].annotate('{:.2%}'.format(j), xy=(i, j))
     axes[0].set_title(
-        "training and full test by 10 times")
+        "training, full and quantized test by 10 times")
     axes[0].set_xticks(np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
 
     axes[1].plot(indexlists[0], valuelists[-1], "-.",
@@ -308,7 +308,7 @@ def plot_n(indexlists, valuelists, labellist):
     axes[1].legend()
     for i, j in zip(indexlists[0], valuelists[-1]):
         axes[1].annotate('{:.3}'.format(j), xy=(i, j))
-    axes[1].set_title("quantized test with 10 samples per epoch")
+    # axes[1].set_title("quantized test with 10 samples per epoch")
     axes[1].set_xticks(
         np.arange(min(indexlists[0]), max(indexlists[0])+1, 1))
     
@@ -555,8 +555,8 @@ def param_extraction():
 if __name__ == '__main__':
     # Training and testing the CNN compiler and extracting the optimized parameters
     for i in range(epoch_index):
-        compiler = CNN_compiler()
-        accuracy_trained, cost, _params = compiler.training_network()
+        # compiler = CNN_compiler()
+        # accuracy_trained, cost, _params = compiler.training_network()
         _params = param_extraction()
 
         # Testing the network with optimized parameters
@@ -566,7 +566,7 @@ if __name__ == '__main__':
             i+bits_start, _params)
 
         # Storing the results for plotting
-        train_accuracylist.append(accuracy_trained)
+        # train_accuracylist.append(accuracy_trained)
         full_test_accuracylist.append(full_test_accuracy)
         quantized_test_accuracylist.append(quantized_test_accuracy)
         # cost_list.append(cost)
@@ -582,8 +582,8 @@ if __name__ == '__main__':
         for i in quantized_test_accuracylist])
 
     # Plotting the results
-    plot_n([epoch_indexs+bits_start, epoch_indexs], [train_accuracylist, full_test_accuracylist, quantized_test_accuracylist],
-           ["trained accuracy","full test accuracy", "quantized test accuracy"])
+    # plot_n([epoch_indexs+bits_start, epoch_indexs], [train_accuracylist, full_test_accuracylist, quantized_test_accuracylist],
+        #    ["trained accuracy","full test accuracy", "quantized test accuracy"])
 
     # model = Draw_IMC(total_channels=[1, 4, 8], input_sizes=[30, 14],
     #                  MLP_ports=[i_f_map[-2], i_f_map[-1]])
