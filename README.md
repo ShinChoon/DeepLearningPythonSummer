@@ -13,7 +13,7 @@ It does the quantization during the training and inference test. The training pr
 When the training process finished, the model is saved in csv file param_decoded.csv. 
 The inference test read the param_decoded.csv to deploy the weights and bias into test.
 
-** This param_decoded.csv is provided for CNN-C test as inference model of LE 5. More details are provided in the ReadMe of CNN_C-test.
+** This param_decoded.csv is provided for CNN-C test as inference model of LE 5. More details are provided in the ReadMe of [CNN_C-test](https://github.com/ShinChoon/CNN_C-test.git).
 
 ## Structure
 * The neurons and image sizes are modified in the **i_f_map**:
